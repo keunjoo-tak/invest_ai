@@ -1,0 +1,29 @@
+version: 1.0.0
+policies:
+  - code: DART_DISCLOSURE_POLL_KR
+    endpoint: DART_DISCLOSURE_LIST
+    run_mode: polling
+    interval_seconds: 120
+    target_scope: all_listed
+    enabled: true
+    priority: 1
+    market_session: all
+    dedup_key_rule: source_disclosure_id
+  - code: NAVER_NEWS_WATCHLIST_KR
+    endpoint: NAVER_NEWS_SEARCH
+    run_mode: polling
+    interval_seconds: 120
+    target_scope: market_watchlist
+    enabled: true
+    priority: 2
+    market_session: all
+    max_items_per_run: 100
+    lookback_minutes: 30
+  - code: PRICE_DAILY_SYNC_KR
+    endpoint: KIS_REST_OHLCV
+    run_mode: batch
+    cron_expr: "0 16 * * 1-5"
+    target_scope: market_watchlist
+    enabled: true
+    priority: 1
+    market_session: post

@@ -1,0 +1,62 @@
+version: 1.0.0
+providers:
+  - code: KIS
+    name: Korea Investment Securities OpenAPI
+    type: api
+    market_scope: KR
+    official: false
+    priority: 1
+    enabled: true
+  - code: OPENDART
+    name: Financial Supervisory Service DART OpenAPI
+    type: api
+    market_scope: KR
+    official: true
+    priority: 1
+    enabled: true
+  - code: KIND
+    name: KRX KIND
+    type: web
+    market_scope: KR
+    official: true
+    priority: 1
+    enabled: true
+  - code: NAVER_SEARCH
+    name: Naver Search API
+    type: api
+    market_scope: KR
+    official: false
+    priority: 1
+    enabled: true
+  - code: X_API
+    name: X API v2
+    type: api
+    market_scope: GLOBAL
+    official: true
+    priority: 1
+    enabled: true
+endpoints:
+  - provider: KIS
+    code: KIS_REST_OHLCV
+    domain: price
+    granularity: daily
+    transport: rest
+    method: GET
+    parser: json
+    timeout_sec: 10
+  - provider: OPENDART
+    code: DART_DISCLOSURE_LIST
+    domain: disclosure
+    granularity: event
+    transport: rest
+    method: GET
+    parser: json
+    timeout_sec: 15
+  - provider: NAVER_SEARCH
+    code: NAVER_NEWS_SEARCH
+    domain: news
+    granularity: event
+    transport: rest
+    method: GET
+    parser: json
+    timeout_sec: 10

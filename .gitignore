@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment / secrets
+.env
+.env.*
+.env.example
+*.pem
+*.key
+*credentials*.json
+pjt-dev-hdegis-app-*.json
+
+# Local databases / artifacts
+*.db
+*.sqlite
+*.sqlite3
+
+# Test / cache
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Build / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# IDE / OS
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+.DS_Store
+
+# Project local temp/runtime
+.tmp/
+tmp/
+logs/
+*.log
+pytest-cache-files-*/
