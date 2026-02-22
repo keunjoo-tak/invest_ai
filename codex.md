@@ -119,3 +119,15 @@
   - `py scripts/run_e2e_pipeline.py` (PostgreSQL + Telegram enabled) -> `telegram_result.status = sent`, `http_status = 200`
 - 상태:
   - 사용자 요청 1) 외부 커넥터 연동 2) PostgreSQL E2E 3) 텔레그램 실발송 검증 모두 완료
+
+## 2026-02-22 7차 업데이트 (git push 인증 이슈)
+- 커밋 완료: `ff17dfa` (`feat: add investai signal alert service MVP`)
+- `git push origin main` 최초 실패 원인: `schannel ... SEC_E_NO_CREDENTIALS`
+- 조치:
+  - Git Credential Manager 전역 설정 완료 (`git credential-manager configure`)
+  - 로컬 저장소 `http.sslbackend=openssl` 설정 적용 (schannel 우회)
+- 현재 남은 이슈:
+  - VS Code askpass 스크립트 실행 권한 오류로 인증 프롬프트 생성 실패
+  - 에러: `failed to execute prompt script ... askpass.sh` / `could not read Username`
+- 상태:
+  - 네트워크/TLS 단계는 통과, 사용자 자격증명 입력 단계에서 터미널/askpass 환경 제약으로 중단
