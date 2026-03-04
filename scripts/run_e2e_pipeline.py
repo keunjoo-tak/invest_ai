@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import asyncio
 import os
@@ -8,8 +8,10 @@ from pathlib import Path
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from dotenv import load_dotenv
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=True)
 
 from app.db.base import Base
 from app.schemas.analysis import AnalyzeTickerRequest
@@ -17,6 +19,7 @@ from app.services.pipeline.orchestrator import AnalysisPipeline
 
 
 async def main() -> int:
+    """동작 설명은 인수인계 문서를 참고하세요."""
     database_url = os.getenv("DATABASE_URL", "sqlite:///investai_local.db")
     engine = create_engine(database_url, future=True)
     Base.metadata.create_all(bind=engine)

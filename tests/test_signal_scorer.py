@@ -1,10 +1,11 @@
-from datetime import date
+﻿from datetime import date
 
 from app.schemas.common import MarketFeatureSet
 from app.services.signal.scorer import evaluate_signal
 
 
 def test_signal_scorer_bullish_case() -> None:
+    """동작 설명은 인수인계 문서를 참고하세요."""
     features = MarketFeatureSet(
         as_of_date=date.today(),
         close=110.0,
@@ -23,6 +24,7 @@ def test_signal_scorer_bullish_case() -> None:
 
 
 def test_signal_scorer_risk_case() -> None:
+    """동작 설명은 인수인계 문서를 참고하세요."""
     features = MarketFeatureSet(
         as_of_date=date.today(),
         close=90.0,

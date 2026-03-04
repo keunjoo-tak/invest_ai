@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>InvestAI Intelligence Console</title>
+    <link rel="stylesheet" href="/assets/styles.css" />
+  </head>
+  <body>
+    <div class="bg-shape bg-shape-a"></div>
+    <div class="bg-shape bg-shape-b"></div>
+    <main class="container">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">INVESTAI PRO CONSOLE</p>
+          <h1>투자 인텔리전스 운영 대시보드</h1>
+          <p class="sub">
+            종목 분석, 전략 시나리오, 시장 브리프, 문서형 배치 수집을 한 화면에서 실행하고 결과를 검증할 수 있습니다.
+          </p>
+        </div>
+        <div class="status-card">
+          <p class="status-label">백엔드 상태</p>
+          <p id="health-status" class="status-value">확인 중...</p>
+          <button id="refresh-health" class="btn ghost">상태 새로고침</button>
+        </div>
+      </header>
+
+      <section class="grid">
+        <article class="panel">
+          <h2>종목 통합 분석</h2>
+          <p class="desc">`POST /api/v1/analyze/ticker`</p>
+          <form id="analyze-form" class="form">
+            <label>종목(티커/종목명) <input name="ticker_or_name" value="005930" required /></label>
+            <label>알림 시도 <input type="checkbox" name="notify" checked /></label>
+            <label>강제 발송 <input type="checkbox" name="force_send" /></label>
+            <label>응답 언어
+              <select name="response_language">
+                <option value="ko" selected>ko</option>
+                <option value="en">en</option>
+              </select>
+            </label>
+            <button class="btn" type="submit">분석 실행</button>
+          </form>
+          <pre id="analyze-output" class="output"></pre>
+        </article>
+
+        <article class="panel">
+          <h2>Stock Insight</h2>
+          <p class="desc">`GET /api/v1/stock-insight/{ticker}`</p>
+          <form id="insight-form" class="form">
+            <label>종목 <input name="ticker" value="005930" required /></label>
+            <button class="btn" type="submit">조회</button>
+          </form>
+          <pre id="insight-output" class="output"></pre>
+        </article>
+
+        <article class="panel">
+          <h2>Trade Compass</h2>
+          <p class="desc">`POST /api/v1/trade-compass/analyze`</p>
+          <form id="trade-form" class="form">
+            <label>종목 <input name="ticker_or_name" value="005930" required /></label>
+            <label>리스크 성향
+              <select name="risk_profile">
+                <option value="conservative">conservative</option>
+                <option value="balanced" selected>balanced</option>
+                <option value="aggressive">aggressive</option>
+              </select>
+            </label>
+            <button class="btn" type="submit">전략 생성</button>
+          </form>
+          <pre id="trade-output" class="output"></pre>
+        </article>
+
+        <article class="panel">
+          <h2>Market Pulse</h2>
+          <p class="desc">`GET /api/v1/market-pulse/overview`</p>
+          <form id="pulse-form" class="form">
+            <button class="btn" type="submit">시장 브리프 조회</button>
+          </form>
+          <pre id="pulse-output" class="output"></pre>
+        </article>
+
+        <article class="panel">
+          <h2>문서 수집 미리보기</h2>
+          <p class="desc">`POST /api/v1/ingestion/crawl/preview`</p>
+          <form id="preview-form" class="form">
+            <label>소스 ID
+              <select name="source_id">
+                <option>S06</option>
+                <option>S28</option>
+                <option selected>S16</option>
+                <option>S18</option>
+              </select>
+            </label>
+            <button class="btn" type="submit">미리보기</button>
+          </form>
+          <pre id="preview-output" class="output"></pre>
+        </article>
+
+        <article class="panel">
+          <h2>배치 실행</h2>
+          <p class="desc">KIND / 정책브리핑 / 한국은행</p>
+          <div class="row">
+            <button id="run-kind" class="btn">KIND 배치</button>
+            <button id="run-policy" class="btn">정책브리핑 배치</button>
+            <button id="run-bok" class="btn">BOK 배치</button>
+          </div>
+          <pre id="batch-output" class="output"></pre>
+        </article>
+      </section>
+    </main>
+    <script type="module" src="/assets/app.js"></script>
+  </body>
+  </html>
+

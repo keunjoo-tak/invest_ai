@@ -4,16 +4,17 @@ from app.schemas.common import MarketFeatureSet, SignalReason, SignalResult
 
 
 def evaluate_signal(features: MarketFeatureSet) -> SignalResult:
+    """동작 설명은 인수인계 문서를 참고하세요."""
     score = 50.0
     reasons: list[SignalReason] = []
     risk_flags: list[str] = []
 
     if features.close > features.ma_20:
         score += 8
-        reasons.append(SignalReason(code="PRICE_ABOVE_MA20", description="종가가 20일 평균 위", score_contribution=8))
+        reasons.append(SignalReason(code="PRICE_ABOVE_MA20", description="종가가 20일 이동평균 위", score_contribution=8))
     else:
         score -= 6
-        reasons.append(SignalReason(code="PRICE_BELOW_MA20", description="종가가 20일 평균 아래", score_contribution=-6))
+        reasons.append(SignalReason(code="PRICE_BELOW_MA20", description="종가가 20일 이동평균 아래", score_contribution=-6))
 
     if features.ma_20 > features.ma_60:
         score += 10

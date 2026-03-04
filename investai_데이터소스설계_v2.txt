@@ -1,0 +1,300 @@
+﻿링크 카탈로그 (Source ID → URL)
+[S01] 한국투자증권 KIS Developers (Broker API) : https://apiportal.koreainvestment.com
+[S02] 키움 OpenAPI+ (Broker API/OCX)         : https://www.kiwoom.com
+[S03] KRX 데이터시스템(지수/시세/EOD 등)      : https://data.krx.co.kr
+[S04] KRX Data Marketplace(유료/데이터서비스) : https://datamarket.krx.co.kr
+[S05] 금융감독원 OpenDART(공시 OpenAPI)       : https://opendart.fss.or.kr
+[S06] KRX KIND(공시/IR 웹)                    : https://kind.krx.co.kr
+[S07] 공공데이터포털(data.go.kr)              : https://www.data.go.kr
+[S08] 네이버 검색 API(뉴스 검색)              : https://developers.naver.com/docs/serviceapi/search/news/news.md
+[S09] Google Custom Search JSON API           : https://developers.google.com/custom-search/v1/overview
+[S10] NewsAPI(글로벌 뉴스)                    : https://newsapi.org
+[S11] GDELT(글로벌 이벤트/뉴스 데이터)        : https://www.gdeltproject.org  /  https://api.gdeltproject.org
+[S12] X API v2                                : https://developer.x.com/en/docs/x-api
+[S13] 한국은행 ECOS OpenAPI(거시/금융통계)     : https://ecos.bok.or.kr/api/
+[S14] KOSIS OpenAPI(국가통계)                 : https://kosis.kr/openapi/
+[S15] 통계청(보도자료/물가 등, 웹)            : https://kostat.go.kr
+[S16] 한국은행(보도자료/PPI 등, 웹)           : https://www.bok.or.kr
+[S17] BLS Public Data API(미국 고용/물가 등)   : https://www.bls.gov/developers/
+[S18] BLS CPI News Release(웹)                : https://www.bls.gov/news.release/cpi.htm
+[S19] BEA API(미국 GDP/PCE 등)                : https://apps.bea.gov/api/
+[S20] BEA Release Schedule(웹/캘린더)          : https://www.bea.gov/news/schedule
+[S21] FRED API(ALFRED 포함)                   : https://fred.stlouisfed.org/docs/api/fred/
+[S22] EIA Open Data API(에너지/WTI 등)         : https://www.eia.gov/opendata/
+[S23] Polygon.io(미국 주가/분봉 등)            : https://polygon.io
+[S24] Finnhub(글로벌/미국 주가/펀더멘털 등)    : https://finnhub.io
+[S25] Alpha Vantage(대안/백테스트)            : https://www.alphavantage.co/documentation/
+[S26] SEC EDGAR API(미국 공시/XBRL)           : https://www.sec.gov/edgar/sec-api-documentation
+[S27] BLS News Release Schedule(웹)            : https://www.bls.gov/schedule/news_release/
+[S28] 정책브리핑(정책/보도자료, 웹)           : https://www.korea.kr/news/policyNewsList.do
+[S29] 기업 IR 사이트(회사별, 웹/RSS)           : (회사별 IR URL을 registry로 관리)
+
+“크롤링/파싱 + 전처리 모듈”이 필요한 수집 대상 목록 (링크 포함)
+- 아래는 API로 숫자만 받는 것과 달리, 웹페이지/문서(PDF/HTML)/첨부파일을 크롤링·다운로드·파싱해서 “정형화”해야 가치가 생기는 영역입니다.
+
+- 2-A 공시/IR/기업문서 파싱형
+Source: [S06] / KRX KIND 공시/IR 자료실: 공시 상세/첨부/IR 문서 다운로드 + 메타/본문/표 추출 → 이벤트화
+Source: [S05] / OpenDART 첨부문서(보고서/PDF/HTML): API로 목록/링크 확보 후 첨부 다운로드 → 본문/표/수치 추출(“크롤링”이 아니라 API+다운로드/파싱이지만 구현 난이도는 동일 계열)
+Source: [S29] / 기업 IR 사이트(회사별): IR deck/프레젠테이션/실적발표 자료 게시 감지 → 다운로드/파싱(회사별 URL registry 필요)
+
+- 2-B 거시/정책/산업 “보도자료/발표문” 파싱형
+Source: [S15] / 통계청 보도자료(물가/CPI 등): 발표문 텍스트 + 첨부(PDF) 파싱 → 발표 이벤트화/서프라이즈 코멘트 생성 재료
+Source: [S16] / 한국은행 보도자료(PPI 등): 보도자료/첨부 파싱 → 거시 이벤트화
+Source: [S28] / 정책브리핑(정부 정책/산업전략/규제/지원 발표): 정책 문서/보도자료 파싱 → 정책 이벤트화 + 섹터 매핑
+
+- 2-C 글로벌 매크로 “릴리즈 텍스트” 파싱형
+Source: [S18] / BLS CPI News Release(설명/표/문장): 수치 API와 별개로 “해설 텍스트/표”를 파싱해서 브리프 품질 개선
+Source: [S20] / BEA Release Schedule(발표 캘린더): 발표 일정 자동화(ICS/웹) → 이벤트 강화 수집 트리거
+Source: [S27] / BLS News Release Schedule: 발표 일정 자동화 → 이벤트 강화 수집 트리거
+
+- 2-D 미국 공시/XBRL 파싱형
+Source: [S26] / SEC EDGAR filing 텍스트/XBRL: API/다운로드 후 XBRL 파싱 → 실적/가이던스/리스크 추출
+
+- 3 크롤링/파싱 모듈 “경계” 추천 (바로 개발로 연결)
+* 크롤링/전처리 모듈을 “소스별 커넥터 + 공통 파서”로 쪼개는 게 운영에 유리합니다.
+collector_kind : [S06] (공시/IR 목록/상세/첨부 다운로드)
+collector_policy_briefing : [S28] (정책 이벤트)
+collector_kostat_press : [S15] (CPI 등 보도자료)
+collector_bok_press : [S16] (PPI 등 보도자료)
+collector_bls_release : [S18] (CPI release 텍스트/표)
+collector_calendar_bea : [S20] (발표 일정)
+collector_calendar_bls : [S27] (발표 일정)
+collector_company_ir : [S29] (회사별 IR registry 기반)
+
+* 공통 전처리 모듈(재사용 권장)
+html_cleaner / pdf_text_extractor / table_extractor
+doc_fingerprint(중복 제거) / doc_versioning(수정본 처리)
+entity_linker(종목/섹터 매핑) / event_classifier
+score_engine(impact/sentiment/freshness 등)
+
+----------------------------------------------------------------
+1) Internal/Derived 생성 항목 전체 리스트
+정형 계산: 수익률/변동성/ATR/이평/거리/비율/베타 등
+집계/랭킹: 섹터 점수, 자금유입 점수, 거래대금 집중도, breadth 등
+분류/스코어링: 이벤트 중요도/영향도, 공시 태그, 정책 수혜 점수 등
+텍스트 전처리 결과: 뉴스 클러스터, 감성, 신뢰가중치, 문서 태그 등 (LLM/룰 혼합)
+전략 산출물: 시나리오 점수, 진입/청산 밴드, 무효화 조건, 알림 후보 등
+운영 피처: 알림 피로도, 반응도, 트리거 품질 등
+
+1-A) Stock Insight — Internal/Derived 항목 (전부)
+A1. 가격/거래량 구조 파생 (입력: 시세/분봉/일봉)
+주요 입력 소스: 국내는 [S01]/[S02]/[S03] (미국 확장 시 [S23]/[S24]/[S25])
+수익률 (1D / 5D / 20D / 60D)
+ATR, 변동성
+이동평균선
+이격도
+박스권 상단/하단
+돌파 여부
+거래량 z-score
+갭 상승/하락 여부
+
+A2. 수급 구조 파생 (입력: 투자자별 수급/공매도/대차)
+주요 입력 소스: [S03](가능 시 [S04]의 보조 데이터/민간 데이터 병행)
+1D / 5D / 20D 외국인 누적 순매수
+기관 수급 지속성 점수
+프로그램 매매 영향 점수
+공매도 부담 점수
+대차잔고 증가율
+
+A3. 재무/실적/밸류 파생 (입력: 재무제표/실적/컨센서스/밸류스냅샷)
+주요 입력 소스: [S05](공시 기반) + (거래소/민간 데이터는 [S03]/[S04]/[S24] 등 선택)
+매출 성장률
+이익 성장률
+실적 서프라이즈율
+이익 추정치 상향/하향
+valuation z-score
+sector-relative valuation percentile
+
+A4. 공시 이벤트 파생 (입력: 공시 목록/본문/첨부/정정 체인)
+주요 입력 소스: [S05](API) + [S06](웹/첨부 보강)
+공시 중요도 점수
+dilutive / accretive / neutral event tag
+earnings-related / governance-related / financing-related tag
+장중/장후 발표 플래그
+이벤트 신선도 점수
+
+A5. 뉴스 이벤트 파생 (입력: 뉴스 본문/메타)
+주요 입력 소스: 국내 [S08], 글로벌/보조 [S10]/[S11] (도메인 제한 검색은 [S09])
+뉴스 감성 점수
+영향도 점수
+이벤트 카테고리
+신규성 점수
+언론사 신뢰 가중치
+이슈 클러스터 ID
+
+A6. IR/발표자료 파생 (입력: IR PDF/프레젠테이션/텍스트)
+주요 입력 소스: [S06](KIND IR) + [S29](기업 IR) + (DART 첨부 [S05])
+가이던스 상향/하향 태그
+성장 키워드 빈도
+리스크 언급 태그
+CAPEX / 수주 / 원가 / 환율 민감도 태그
+management tone score
+
+A7. 섹터/시장 상대 맥락 파생 (입력: 종목/섹터/시장 지수 시계열 + 섹터매핑)
+주요 입력 소스: [S03] + (섹터 매핑은 내부 master)
+섹터 상대강도 점수
+종목 vs 섹터 초과수익률
+섹터 밸류 상대위치
+섹터 내 거래대금 집중도
+시장 대비 베타성 보조지표
+
+A8. Stock Insight “내부 생성 산출물” (지표가 아니라 결과물 성격)
+(대부분 위 파생값들을 조합해서 생성)
+종목 상태 라벨(상승/하락/변곡/과열 등)
+종목 한줄 진단(요약 문장)
+핵심 리스크/체크포인트 N개
+이벤트 타임라인(공시/뉴스/실적/IR 연결)
+최신 스냅샷(daily/intraday) 및 품질 플래그
+
+1-B) Trade Compass — Internal/Derived 항목 (전부)
+Trade Compass는 “수집”이라기보다 Stock Insight + Market Pulse + 사용자 상태 + 룰/정책을 결합해 사용자별 전략 산출물을 내부 생성하는 구조입니다.
+주요 입력 소스: 가격 [S01]/[S02]/[S03], 종목상태(내부) + 시장체제(내부) + 사용자 데이터(내부)
+
+B1. 가격대/거리/변동성 기반 파생
+entry distance to support
+breakout distance to resistance
+stop-loss distance
+reward/risk ratio
+volatility-adjusted stop band
+intraday exhaustion signal
+chase risk score
+
+B2. 이벤트/수급 기반 확신도 파생
+(공시/뉴스/실적 이벤트와 수급이 “전략의 확신도”를 지지하는지 평가)
+scenario conviction score
+event break-risk score
+post-event uncertainty score
+flow confirmation score
+catalyst persistence score
+
+B3. 펀더멘털/밸류 부담 파생
+valuation burden score
+earnings momentum score
+fundamental support score
+overpricing risk score
+mean reversion potential score
+
+B4. 시장/섹터 컨텍스트 오버레이 파생
+(Market Pulse의 regime/섹터강도를 Trade Compass 관점으로 재가공)
+context tailwind score
+sector confirmation score
+macro risk overlay score
+regime compatibility score
+
+B5. 사용자 포지션 기반 파생
+unrealized pnl ratio
+distance from avg_price
+position stress score
+overweight/underweight score
+averaging_down_risk score
+
+B6. 사용자 성향(리스크/기간) 기반 파생
+stop tolerance band
+action aggressiveness factor
+alert sensitivity factor
+preferred setup weight
+
+B7. 전략 룰/정책 기반 파생
+applicable_strategy_set
+rule_conflict_flag
+scenario_template_id
+default_action_priority
+
+B8. 알림 운영 피처 파생
+alert fatigue score
+trigger quality score
+user responsiveness score
+false alert suspicion score
+
+B9. Trade Compass “내부 생성 산출물”
+권장 행동 상태(관망/분할진입/보유/부분차익/리스크축소)
+진입 밴드(눌림/돌파 진입 구간)
+손절/무효화 구간
+목표가 시나리오(상승/기본/하락) 및 조건
+confidence band(신뢰도 구간)
+alert candidate(발송 가능 트리거 후보) + suppression/cooldown 결과
+
+1-C) Market Pulse — Internal/Derived 항목 (전부)
+Market Pulse는 “시장/섹터/거시 해석”이 목적이라 내부 집계/랭킹/체제분류가 핵심입니다.
+주요 입력 소스: 시장/지수 [S03], 거시 [S13]/[S14], 글로벌/원자재 [S21]/[S22], 정책 [S28], 섹터이벤트(Stock Insight 이벤트 레이어 기반)
+
+C1. 시장 Breadth/회전/변동성 파생
+market breadth score
+large-vs-small rotation score
+growth-vs-value rotation score
+volatility stress score
+market direction persistence score
+intraday risk regime hint
+
+C2. 섹터 강도/모멘텀/확산 파생
+sector strength score
+sector momentum score
+sector breadth score
+sector leadership concentration
+sector rotation acceleration
+representative stock confirmation score
+
+C3. 섹터 내부 확산/의존도/분산 파생
+sector participation rate
+sector breadth diffusion score
+leadership dependency score
+sector internal dispersion
+top-contributor concentration score
+
+C4. 거시 환경 파생(국내 중심)
+주요 입력 소스: [S13](ECOS), [S14](KOSIS) + (일부 웹 보강은 [S15]/[S16])
+growth pulse score
+inflation pressure score
+macro surprise score
+cyclical sensitivity score
+domestic demand trend score
+
+C5. 대외/금리/환율/원자재 오버레이 파생
+주요 입력 소스: [S21](FRED), [S22](EIA) + 필요 시 [S24]/[S25]
+rate pressure score
+fx headwind/tailwind score
+commodity tailwind score
+global risk appetite score
+external shock sensitivity score
+
+C6. 정책/산업 모멘텀 파생
+주요 입력 소스: [S28](정책브리핑), [S14](산업 통계), (문서 원문은 웹 파싱)
+policy support score
+regulation risk score
+industry momentum score
+sector policy sensitivity score
+structural tailwind score
+
+C7. 섹터 이벤트/내러티브 파생
+(공시/뉴스/실적 이벤트를 섹터 단위로 “전파/밀도/균형/내러티브”로 재집계)
+sector catalyst score
+earnings season strength score
+sector event density
+positive/negative event balance
+sector narrative coherence score
+
+C8. 자금 흐름 파생(섹터 단위)
+주요 입력 소스: [S03]
+money inflow score
+capital concentration score
+flow persistence score
+participation-adjusted sector flow score
+
+C9. 룰/정책/브리프 운영 파생
+applicable_regime_rule_set
+rule_conflict_flag
+default_strategy_stance
+brief_output_policy_id
+
+C10. 콘텐츠/알림 성과 파생
+brief engagement score
+alert fatigue score
+sector content usefulness score
+regime change alert precision proxy
+
+C11. Market Pulse “내부 생성 산출물”
+market regime label + score(체제 분류 결과)
+섹터 랭킹(강세/약세 Top-N)
+전략 스탠스(selective offense/defense 등)
+daily/weekly brief 본문(요약/근거/체크포인트)
+event-driven brief 트리거 결과

@@ -12,7 +12,6 @@ env/
 # Environment / secrets
 .env
 .env.*
-.env.example
 *.pem
 *.key
 *credentials*.json
@@ -50,3 +49,4 @@ tmp/
 logs/
 *.log
 pytest-cache-files-*/
+downloads/

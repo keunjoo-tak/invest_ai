@@ -1,4 +1,4 @@
-from functools import lru_cache
+﻿from functools import lru_cache
 from pathlib import Path
 
 from pydantic import Field
@@ -6,6 +6,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    """동작 설명은 인수인계 문서를 참고하세요."""
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     app_name: str = "InvestAI Signal Alert Service"
@@ -14,6 +15,7 @@ class Settings(BaseSettings):
     timezone: str = "Asia/Seoul"
     default_market: str = "KR"
     default_lookback_days: int = 365
+    downloads_dir: str = Field(default="downloads", alias="DOWNLOADS_DIR")
 
     database_url: str = Field(
         default="postgresql+psycopg://investai:investai@localhost:5432/investai",
@@ -39,15 +41,21 @@ class Settings(BaseSettings):
     # External providers (MVP)
     kis_app_key: str = Field(default="", alias="KIS_APP_KEY")
     kis_app_secret: str = Field(default="", alias="KIS_APP_SECRET")
+    kis_base_url: str = Field(default="", alias="KIS_BASE_URL")
+    kis_mock_base_url: str = Field(default="https://openapivts.koreainvestment.com:29443", alias="KIS_MOCK_BASE_URL")
+    kis_prod_base_url: str = Field(default="https://openapi.koreainvestment.com:9443", alias="KIS_PROD_BASE_URL")
     dart_api_key: str = Field(default="", alias="DART_API_KEY")
     naver_client_id: str = Field(default="", alias="NAVER_CLIENT_ID")
     naver_client_secret: str = Field(default="", alias="NAVER_CLIENT_SECRET")
     x_bearer_token: str = Field(default="", alias="X_BEARER_TOKEN")
 
     def credentials_path(self) -> Path:
+        """동작 설명은 인수인계 문서를 참고하세요."""
         return Path(self.google_application_credentials).resolve()
 
 
 @lru_cache
 def get_settings() -> Settings:
+    """동작 설명은 인수인계 문서를 참고하세요."""
     return Settings()
+

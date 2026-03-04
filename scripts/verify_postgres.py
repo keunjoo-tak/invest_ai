@@ -1,15 +1,18 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import os
 import sys
 from pathlib import Path
 
 from sqlalchemy import create_engine, text
+from dotenv import load_dotenv
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=True)
 
 
 def main() -> int:
+    """동작 설명은 인수인계 문서를 참고하세요."""
     url = os.getenv("DATABASE_URL", "postgresql+psycopg://investai:investai@localhost:5432/investai")
     try:
         engine = create_engine(url, future=True)

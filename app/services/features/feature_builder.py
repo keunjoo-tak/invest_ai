@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import date
 from statistics import mean, pstdev
@@ -7,6 +7,7 @@ from app.schemas.common import MarketFeatureSet
 
 
 def _rsi14(closes: list[float]) -> float:
+    """동작 설명은 인수인계 문서를 참고하세요."""
     if len(closes) < 15:
         return 50.0
     gains, losses = [], []
@@ -23,6 +24,7 @@ def _rsi14(closes: list[float]) -> float:
 
 
 def build_features(as_of_date: date, prices: list[dict], news: list[dict], disclosures: list[dict], macro: list[dict]) -> MarketFeatureSet:
+    """동작 설명은 인수인계 문서를 참고하세요."""
     closes = [row["close"] for row in prices if row["close"] > 0]
     volumes = [row["volume"] for row in prices if row["volume"] > 0]
     close = closes[-1]

@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from hashlib import sha1
@@ -12,11 +12,13 @@ from app.schemas.common import SignalResult
 
 
 def build_reason_fingerprint(signal: SignalResult) -> str:
+    """동작 설명은 인수인계 문서를 참고하세요."""
     raw = "|".join([signal.direction, signal.signal_type] + sorted([r.code for r in signal.reasons]))
     return sha1(raw.encode("utf-8")).hexdigest()[:24]
 
 
 def is_alert_blocked_by_cooldown(db: Session, instrument: Instrument, signal: SignalResult) -> bool:
+    """동작 설명은 인수인계 문서를 참고하세요."""
     settings = get_settings()
     fp = build_reason_fingerprint(signal)
     stmt = (
