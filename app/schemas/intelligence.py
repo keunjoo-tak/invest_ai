@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import date, datetime
 from typing import Any
@@ -9,7 +9,7 @@ from app.schemas.common import MarketFeatureSet, SignalResult
 
 
 class StockInsightResponse(BaseModel):
-    """Stock Insight 응답 모델."""
+    """레거시 Stock Insight 응답 모델."""
 
     ticker: str
     instrument_name: str
@@ -31,20 +31,20 @@ class StockInsightResponse(BaseModel):
 
 
 class TradeCompassRequest(BaseModel):
-    """Trade Compass 요청 모델."""
+    """레거시 Trade Compass 요청 모델."""
 
-    ticker_or_name: str = Field(min_length=1, max_length=100, description="분석 대상 종목명 또는 티커")
-    as_of_date: date | None = Field(default=None, description="기준일")
-    investment_horizon: str = Field(default="swing", description="투자 기간(swing/midterm)")
-    risk_profile: str = Field(default="balanced", description="위험 성향(conservative/balanced/aggressive)")
-    objective: str = Field(default="new_entry", description="투자 목적(new_entry/add/buy_hold/partial_take/full_exit)")
-    has_position: bool = Field(default=False, description="현재 보유 여부")
-    avg_buy_price: float | None = Field(default=None, ge=0, description="평균단가(보유 시)")
-    response_language: str = Field(default="ko", pattern="^(ko|en)$", description="응답 언어")
+    ticker_or_name: str = Field(min_length=1, max_length=100, description='분석 대상 종목명 또는 티커')
+    as_of_date: date | None = Field(default=None, description='분석 기준일')
+    investment_horizon: str = Field(default='swing', description='투자 기간(swing/midterm)')
+    risk_profile: str = Field(default='balanced', description='위험 성향(conservative/balanced/aggressive)')
+    objective: str = Field(default='new_entry', description='투자 목적(new_entry/add/buy_hold/partial_take/full_exit)')
+    has_position: bool = Field(default=False, description='현재 보유 여부')
+    avg_buy_price: float | None = Field(default=None, ge=0, description='평균단가(보유 시)')
+    response_language: str = Field(default='ko', pattern='^(ko|en)$', description='응답 언어')
 
 
 class TradeScenario(BaseModel):
-    """시나리오 모델."""
+    """레거시 시나리오 모델."""
 
     scenario: str
     trigger: str
@@ -53,7 +53,7 @@ class TradeScenario(BaseModel):
 
 
 class TradeCompassResponse(BaseModel):
-    """Trade Compass 응답 모델."""
+    """레거시 Trade Compass 응답 모델."""
 
     ticker: str
     instrument_name: str
@@ -72,7 +72,7 @@ class TradeCompassResponse(BaseModel):
 
 
 class MarketPulseOverviewResponse(BaseModel):
-    """Market Pulse overview 응답 모델."""
+    """레거시 Market Pulse overview 응답 모델."""
 
     as_of_date: date
     generated_at_utc: datetime
@@ -84,3 +84,4 @@ class MarketPulseOverviewResponse(BaseModel):
     macro_summary: list[dict[str, Any]] = Field(default_factory=list)
     strategy_hints: list[str] = Field(default_factory=list)
     representative_symbols: list[dict[str, Any]] = Field(default_factory=list)
+    headline_news_briefs: list[dict[str, Any]] = Field(default_factory=list)

@@ -1,441 +1,497 @@
-# 함수/클래스 인수인계 가이드
-
-이 문서는 `app/`, `scripts/`, `tests/`의 주요 함수/클래스를 인수인계 관점으로 요약한 문서입니다.
-구성: `기능` / `처리 방식` / `I/O 예시`
-
-## 1) 앱 진입점
-
-### `app/main.py`
-
-#### `on_startup()`
-- 기능: 애플리케이션 시작 시 DB 테이블 생성과 스케줄러 시작.
-- 처리 방식: `Base.metadata.create_all(bind=engine)` -> `scheduler.start()`.
-- I/O 예시:
-  - 입력: 없음
-  - 출력: 없음(부수효과: DB 테이블/스케줄러 준비)
-
-#### `on_shutdown()`
-- 기능: 애플리케이션 종료 시 스케줄러 정리.
-- 처리 방식: `scheduler.shutdown(wait=False)`.
-- I/O 예시:
-  - 입력: 없음
-  - 출력: 없음
-
-## 2) API 라우터
-
-### `app/api/routes/health.py`
-
-#### `health() -> HealthResponse`
-- 기능: 서버 상태 확인.
-- 처리 방식: 설정값(`app_name`, `app_env`) + 현재 UTC 시각 반환.
-- I/O 예시:
-  - 입력: 없음
-  - 출력: `{"status":"ok","app":"InvestAI Signal Alert Service","env":"dev","time_utc":"..."}`
-
-### `app/api/routes/analysis.py`
-
-#### `analyze_ticker(req, db) -> AnalyzeTickerResponse`
-- 기능: 종목 분석 파이프라인 실행.
-- 처리 방식: `AnalysisPipeline.run()` 호출.
-- I/O 예시:
-  - 입력: `{"ticker_or_name":"005930","lookback_days":365,"notify":true}`
-  - 출력: 신호/피처/설명/알림결과 포함 응답
-
-### `app/api/routes/internal.py`
-
-#### `_now() -> datetime`
-- 기능: UTC 현재 시각 헬퍼.
-- 처리 방식: `datetime.now(timezone.utc)`.
-- I/O 예시:
-  - 입력: 없음
-  - 출력: `2026-02-28T12:00:00+00:00`
-
-#### `recompute_features() -> dict`
-- 기능: 내부 작업 트리거 샘플.
-- 처리 방식: 매크로 샘플 조회 후 건수 반환.
-- I/O 예시:
-  - 입력: 없음
-  - 출력: `{"status":"queued","macro_rows":2}`
-
-#### `resolve_instrument(req) -> IngestionProbeResponse`
-- 기능: 입력 종목명/티커를 최종 티커로 정규화.
-- 처리 방식: `providers.resolve_instrument()` 결과를 진단 포맷으로 반환.
-- I/O 예시:
-  - 입력: `{"ticker_or_name":"네이버"}`
-  - 출력: `details.ticker="035420", details.name_kr="NAVER"`
-
-#### `search_instrument_candidates(req) -> InstrumentSearchResponse`
-- 기능: 텍스트 유사도 기반 후보 검색.
-- 처리 방식: `providers.search_instruments(query, limit)` 호출.
-- I/O 예시:
-  - 입력: `{"query":"하이닉스","limit":5}`
-  - 출력: `[{"ticker":"000660","name_kr":"SK하이닉스","score":0.99,...}, ...]`
-
-#### `probe_kis_daily_price(req) -> IngestionProbeResponse`
-- 기능: KIS 일봉 수집 단독 점검.
-- 처리 방식: 종목 resolve 후 `_fetch_price_daily_kis()` 직접 호출.
-- I/O 예시:
-  - 입력: `{"ticker_or_name":"005930","lookback_days":30}`
-  - 출력: `sample=[{"trade_date":"2026-02-27","close":...}, ...]`
-
-#### `probe_naver_news(req) -> IngestionProbeResponse`
-- 기능: NAVER 뉴스 수집 단독 점검.
-- 처리 방식: `_fetch_news_naver()` 호출.
-- I/O 예시:
-  - 입력: `{"ticker_or_name":"삼성전자","max_items":5}`
-  - 출력: `sample=[{"title":"...","url":"...","publish_time_utc":"..."}, ...]`
-
-#### `probe_dart_corp_code(req) -> IngestionProbeResponse`
-- 기능: 티커 -> DART `corp_code` 매핑 점검.
-- 처리 방식: `_load_dart_corp_code_map()` 조회.
-- I/O 예시:
-  - 입력: `{"ticker_or_name":"005930"}`
-  - 출력: `details={"ticker":"005930","corp_code":"00126380",...}`
-
-#### `probe_dart_disclosures(req) -> IngestionProbeResponse`
-- 기능: DART 공시 목록 수집 점검.
-- 처리 방식: `_fetch_disclosures_dart()` 호출.
-- I/O 예시:
-  - 입력: `{"ticker_or_name":"005930","days":30}`
-  - 출력: `sample=[{"source_disclosure_id":"...","title":"..."}, ...]`
-
-#### `probe_macro_snapshot(req) -> IngestionProbeResponse`
-- 기능: 매크로 스냅샷 점검.
-- 처리 방식: `fetch_macro(as_of_date)` 반환값 래핑.
-- I/O 예시:
-  - 입력: `{"ticker_or_name":"005930"}`
-  - 출력: `sample=[{"indicator_name":"KRWUSD_DAILY_CHANGE",...}, ...]`
-
-#### `probe_x_recent_search(req) -> IngestionProbeResponse`
-- 기능: X Recent Search 호출 점검.
-- 처리 방식: Bearer 토큰 확인 -> `/2/tweets/search/recent` 호출 -> 상태/에러 진단 반환.
-- I/O 예시:
-  - 입력: `{"query":"삼성전자","max_results":10}`
-  - 출력: `details.http_status=200|402|401`, `sample=[...]`
-
-#### `collect_external_bundle(req) -> CollectExternalBundleResponse`
-- 기능: 외부 수집 소스 전체 번들 점검(KIS/NAVER/DART/매크로).
-- 처리 방식: 각 소스 호출 후 소스별 `IngestionProbeResponse` 배열 구성.
-- I/O 예시:
-  - 입력: `{"ticker_or_name":"005930","lookback_days":30,"max_items":5,"days":30}`
-  - 출력: `sources=[{"source":"kis_daily_price",...},{"source":"naver_news",...}, ...]`
-
-## 3) 파이프라인 계층
-
-### `app/services/pipeline/orchestrator.py`
-
-#### `class AnalysisPipeline`
-- 기능: 분석 전체 오케스트레이션(수집 -> 저장 -> 피처 -> 신호 -> 설명 -> 알림).
-
-#### `__init__()`
-- 처리 방식: `SourceProviderClient`, `GeminiClient`, `TelegramNotifier` 준비.
-- I/O 예시: 입력 없음 / 출력 없음
-
-#### `_get_or_create_instrument(db, ticker_or_name) -> Instrument`
-- 기능: 종목 정규화 후 `instrument_master` 조회/신규 생성.
-- 처리 방식: resolve -> DB select -> 없으면 insert.
-- I/O 예시:
-  - 입력: `"네이버"`
-  - 출력: `Instrument(ticker="035420", name_kr="NAVER", ...)`
-
-#### `_persist_collected_data(db, instrument, prices, news, disclosures, macro_rows) -> None`
-- 기능: 수집 데이터 저장(중복 방지 포함).
-- 처리 방식:
-  - 가격: `(instrument_id, trade_date)` 중복 skip
-  - 뉴스: `url` 중복 skip
-  - 공시: `source_disclosure_id` 중복 skip
-- I/O 예시:
-  - 입력: 수집 dict 리스트들
-  - 출력: 없음(부수효과: DB insert)
-
-#### `run(db, req) -> AnalyzeTickerResponse`
-- 기능: 분석 API의 실질 실행 함수.
-- 처리 방식:
-  - 수집(`fetch_*`) -> 저장 -> 피처(`build_features`) -> 신호(`evaluate_signal`)
-  - 품질 게이트 -> LLM 설명 -> 중복 억제 -> 텔레그램 발송 -> 결과 응답
-- I/O 예시:
-  - 입력: `AnalyzeTickerRequest`
-  - 출력: `AnalyzeTickerResponse`
-
-## 4) 수집 계층
-
-### `app/services/ingestion/providers.py`
-
-#### `class InstrumentProfile`
-- 기능: 정규화된 종목 프로필 DTO.
-- 필드: `ticker`, `name_kr`, `market`, `sector`
-
-#### `class SourceProviderClient`
-- 기능: 종목 식별/외부 API 수집/폴백 데이터 제공.
-
-#### `resolve_instrument(ticker_or_name) -> InstrumentProfile`
-- 기능: 입력값을 단일 종목으로 정규화.
-- 처리 방식: 숫자티커 우선 -> alias -> 유사도 검색 -> fail-soft fallback.
-- I/O 예시:
-  - 입력: `"현대차"`
-  - 출력: `InstrumentProfile(ticker="005380", name_kr="현대자동차", ...)`
-
-#### `search_instruments(query, limit=10) -> list[dict]`
-- 기능: 자연어 종목명/티커 후보 검색.
-- 처리 방식: DART 카탈로그 + alias 결과 병합, 유사도 점수 정렬.
-- I/O 예시:
-  - 입력: `("하이닉스", 5)`
-  - 출력: `[{"ticker":"000660","name_kr":"SK하이닉스","score":0.999,...}, ...]`
-
-#### `fetch_price_daily(ticker, as_of_date, lookback_days) -> list[dict]`
-- 기능: 일봉 데이터 수집(실패 시 fallback).
-- 처리 방식: `_fetch_price_daily_kis()` 실패 시 `_fallback_price_daily()`.
-
-#### `fetch_news(ticker, as_of_date) -> list[dict]`
-- 기능: 뉴스 수집(실패 시 fallback).
-- 처리 방식: `_fetch_news_naver()` 실패 시 `_fallback_news()`.
-
-#### `fetch_disclosures(ticker, as_of_date) -> list[dict]`
-- 기능: 공시 수집(실패 시 fallback).
-- 처리 방식: `_fetch_disclosures_dart()` 실패 시 `_fallback_disclosures()`.
-
-#### `fetch_macro(as_of_date) -> list[dict]`
-- 기능: 매크로 스냅샷 제공.
-- 처리 방식: 현재는 정적 샘플 2건 반환.
-
-#### `_fetch_price_daily_kis(...)`
-- 기능: KIS OpenAPI 일봉 조회.
-- 처리 방식: 토큰 발급 -> 조회 -> 날짜 필터/정렬.
-
-#### `_issue_kis_access_token(...)`
-- 기능: KIS OAuth 토큰 발급.
-
-#### `_kis_base_candidates()`
-- 기능: KIS base URL 우선순위 리스트 생성(`custom -> prod -> mock`).
-
-#### `_fetch_news_naver(...)`
-- 기능: NAVER 검색 뉴스 조회.
-- 처리 방식: HTML 제거, 시간 파싱, 단순 감성점수 부여.
-
-#### `_fetch_disclosures_dart(...)`
-- 기능: DART 공시 목록 조회.
-- 처리 방식: 티커->corp_code 매핑 후 `list.json` 호출, 이벤트 분류/임팩트 산정.
-
-#### `_load_dart_corp_code_map()`
-- 기능: 티커->corp_code dict 반환.
-
-#### `_load_dart_instrument_catalog()`
-- 기능: DART `corpCode.xml` 카탈로그 로딩/12시간 캐시.
-- 처리 방식: ZIP/XML 파싱 후 fallback 카탈로그 merge.
-
-#### `_extract_corp_code_xml_bytes(content)`
-- 기능: ZIP 응답에서 XML 바이트 추출.
-
-#### `_fallback_price_daily(...)`
-- 기능: 가격 fallback 시뮬레이션 데이터 생성.
-
-#### `_fallback_news(...)`
-- 기능: 뉴스 fallback 샘플 생성.
-
-#### `_fallback_disclosures(...)`
-- 기능: 공시 fallback 샘플 생성.
-
-#### `_fallback_catalog()`
-- 기능: 대표 종목 카탈로그 fallback 제공.
-
-#### `_find_catalog_by_ticker(ticker)`
-- 기능: 카탈로그에서 특정 티커 행 조회.
-
-#### `_search_alias_candidates(query)`
-- 기능: alias 기반 후보 생성/점수화.
-
-#### `_alias_map()`
-- 기능: 대표 별칭 맵 구성(예: 네이버/NAVER, 현대차/현대자동차).
-
-#### `_norm_text(value)`
-- 기능: 검색 텍스트 정규화(공백/기호/법인표기 제거).
-
-#### `_similarity(a, b)`
-- 기능: 문자열 유사도 계산(`SequenceMatcher`).
-
-#### `_to_float(v)`
-- 기능: 숫자 문자열/콤마 제거 변환.
-
-#### `_strip_html(s)`
-- 기능: HTML 태그 제거 + 엔티티 unescape.
-
-#### `_parse_naver_pubdate(s)`
-- 기능: NAVER `pubDate` 파싱.
-
-#### `_parse_yyyymmdd(s)`
-- 기능: `YYYYMMDD` 문자열 UTC datetime 변환.
-
-#### `_naive_sentiment(title)`
-- 기능: 키워드 기반 단순 감성 점수.
-
-#### `_classify_disclosure(title)`
-- 기능: 공시 제목을 `contract/earnings/financing/mna/general` 분류.
-
-#### `_estimate_disclosure_impact(title)`
-- 기능: 공시 유형별 임팩트 점수 반환.
-
-## 5) 신호/품질/피처/알림/LLM
-
-### `app/services/features/feature_builder.py`
-
-#### `_rsi14(closes) -> float`
-- 기능: RSI(14) 계산.
-- I/O 예시:
-  - 입력: `[100, 101, ...]`
-  - 출력: `57.3`
-
-#### `build_features(as_of_date, prices, news, disclosures, macro) -> MarketFeatureSet`
-- 기능: 파이프라인용 피처 생성.
-- 처리 방식: 이동평균/RSI/변동성/상대거래량/뉴스/공시/매크로 집계.
-
-### `app/services/signal/scorer.py`
-
-#### `evaluate_signal(features) -> SignalResult`
-- 기능: 룰 기반 점수화 및 신호 타입 결정.
-- 처리 방식: MA/RSI/거래량/뉴스/공시/매크로 반영 후 `score`, `quality_score` 산출.
-
-### `app/services/quality/gates.py`
-
-#### `passes_quality_gate(features, signal) -> tuple[bool, list[str]]`
-- 기능: 품질 게이트 통과 여부 판정.
-- 처리 방식: `quality_score`, 유동성, 가격 유효성 검사.
-
-### `app/services/alerts/dedup.py`
-
-#### `build_reason_fingerprint(signal) -> str`
-- 기능: 중복 알림 판별용 fingerprint 생성.
-- 처리 방식: `direction + signal_type + reason_codes` SHA1(24자리).
-
-#### `is_alert_blocked_by_cooldown(db, instrument, signal) -> bool`
-- 기능: cooldown 내 동일 fingerprint 재발송 차단.
-- 처리 방식: 최근 `alert_history` 조회 후 시간 비교.
-
-### `app/services/alerts/formatter.py`
-
-#### `format_alert_message(...) -> str`
-- 기능: 사용자 알림용 텍스트 포맷팅.
-- 처리 방식: 신호/피처/리스크/LLM 요약을 단일 메시지로 구성.
-
-### `app/services/alerts/telegram.py`
-
-#### `class TelegramNotifier`
-- 기능: Telegram Bot API 발송.
-
-#### `__init__()`
-- 기능: 설정 로드.
-
-#### `send(message) -> dict`
-- 기능: 텔레그램 발송.
-- 처리 방식: 활성화/토큰 검사 -> `/sendMessage` 호출 -> 상태 dict 반환.
-- I/O 예시:
-  - 입력: `"[InvestAI] ..."`
-  - 출력: `{"status":"sent","http_status":200}` 또는 `{"status":"failed",...}`
-
-### `app/services/llm/gemini_client.py`
-
-#### `class GeminiClient`
-- 기능: Gemini 설명 생성 + 실패 fallback.
-
-#### `__init__()`
-- 기능: 설정 로드.
-
-#### `_fallback_explanation(signal) -> dict`
-- 기능: LLM 실패 시 기본 설명 JSON 생성.
-
-#### `explain_signal(ticker, signal, features) -> dict`
-- 기능: Gemini(JSON) 호출 후 설명 반환.
-- 처리 방식: `GEMINI_ENABLED` 확인 -> Vertex AI 호출 -> 실패 시 fallback.
-
-## 6) 설정/로깅/DB 세션
-
-### `app/core/config.py`
-
-#### `class Settings`
-- 기능: `.env` 기반 설정 모델.
-- 처리 방식: `pydantic-settings`로 환경변수 로드.
-- 주요 출력: DB, Gemini, Telegram, 외부 API 키 설정값.
-
-#### `credentials_path() -> Path`
-- 기능: `GOOGLE_APPLICATION_CREDENTIALS` 절대경로 반환.
-
-#### `get_settings() -> Settings`
-- 기능: 설정 싱글톤 반환(`lru_cache`).
-
-### `app/core/logging.py`
-
-#### `configure_logging()`
-- 기능: 전역 로거 포맷/레벨 설정.
-
-### `app/db/base.py`
-
-#### `class Base(DeclarativeBase)`
-- 기능: SQLAlchemy 모델 베이스 클래스.
-
-### `app/db/session.py`
-
-#### `get_db() -> Generator[Session, None, None]`
-- 기능: FastAPI DI용 DB 세션 제공/정리.
-
-## 7) 스키마/모델 클래스
-
-### Pydantic 스키마 클래스
-- 파일: `app/schemas/common.py`, `app/schemas/analysis.py`, `app/schemas/ingestion.py`
-- 클래스:
-  - `HealthResponse`, `SignalReason`, `MarketFeatureSet`, `SignalResult`
-  - `AnalyzeTickerRequest`, `AlertPayload`, `AnalyzeTickerResponse`
-  - `TickerIngestionRequest`, `XRecentSearchRequest`
-  - `InstrumentSearchRequest`, `InstrumentSearchCandidate`, `InstrumentSearchResponse`
-  - `IngestionProbeResponse`, `CollectExternalBundleResponse`
-- 기능: API 요청/응답 유효성 검증 + OpenAPI 스키마 생성.
-- I/O 예시:
-  - 입력(JSON) -> Pydantic 객체
-  - 출력(Pydantic 객체) -> JSON 직렬화
-
-### SQLAlchemy 모델 클래스
-- 파일: `app/db/models.py`
-- 클래스:
-  - `Instrument`, `PriceDaily`, `NewsParsed`, `DisclosureParsed`, `MacroSnapshot`, `SignalDecision`, `AlertHistory`
-- 기능: DB 테이블 매핑 및 저장 구조 정의.
-
-## 8) 워커/검증 스크립트/테스트
-
-### `app/workers/scheduler.py`
-
-#### `build_scheduler() -> BackgroundScheduler`
-- 기능: 백그라운드 스케줄러 생성(현재 job 미등록 상태).
-
-### `scripts/run_e2e_pipeline.py`
-
-#### `main() -> int`
-- 기능: 파이프라인 E2E 단독 실행.
-- 처리 방식: `.env` 로드 -> DB 연결 -> `AnalysisPipeline.run()` 실행 -> 핵심 결과 출력.
-
-### `scripts/verify_postgres.py`
-
-#### `main() -> int`
-- 기능: PostgreSQL 연결 확인.
-- 처리 방식: `select 1` 성공/실패 코드 반환.
-
-### `scripts/verify_telegram.py`
-
-#### `_run() -> int`
-- 기능: Telegram 발송 상태 확인.
-- 처리 방식: env 검사 -> `TelegramNotifier.send()` 호출 -> 성공 여부 코드 반환.
-
-### `tests/test_signal_scorer.py`
-
-#### `test_signal_scorer_bullish_case()`
-- 기능: 강세 시나리오 점수/품질 검증.
-
-#### `test_signal_scorer_risk_case()`
-- 기능: 리스크 시나리오에서 낮은 점수/리스크 플래그 검증.
-
-## 9) 빠른 인수인계 체크리스트
-
-- API 흐름 시작점: `app/api/routes/analysis.py` -> `AnalysisPipeline.run()`
-- 종목 식별/수집 이슈: `app/services/ingestion/providers.py`
-- 신호 로직 변경 포인트: `app/services/signal/scorer.py`
-- 품질 게이트 변경 포인트: `app/services/quality/gates.py`
-- 알림 메시지/중복/채널: `app/services/alerts/*`
-- LLM 응답 포맷: `app/services/llm/gemini_client.py`
-- 스키마 변경 시: `app/schemas/*` + 라우터 응답모델 동시 점검
+# 인수인계 문서
+
+## 1. 문서 목적
+- 이 문서는 `Market Regime`, `Stock Decision` 리포트에 표시되는 핵심 점수, 판단, 요인, 기울기, 비중, 경고가 어떤 데이터와 계산 로직으로 만들어지는지 설명한다.
+- 목적은 두 가지다.
+  - 사용자에게 왜 이런 결과가 나왔는지 명확한 근거를 설명할 수 있게 한다.
+  - 개발자와 운영자가 화면 값과 실제 계산 코드를 바로 연결해 추적할 수 있게 한다.
+
+## 2. 공통 원칙
+- 리포트에 보이는 모든 문장과 점수는 실제 데이터 또는 실제 계산 결과에 기반해야 한다.
+- 내부 판정 코드와 사용자 노출 라벨은 분리한다.
+  - 예: 내부 코드 `EVENT_MONITOR`, 사용자 표시 `이벤트 관찰`
+- 종목은 항상 `종목명(ticker)` 형식으로 표기한다.
+- 설명용 웹 파생 점수는 반드시 API 응답값에서 다시 계산할 수 있어야 한다.
+
+## 3. 책임 경로
+
+### 3.1 Market Regime
+- 백엔드 계산
+  - `app/services/intelligence/market_pulse.py`
+    - `MarketPulseEngine.overview()`
+    - `MarketPulseEngine._classify_regime()`
+- 제품 응답 조립
+  - `app/services/intelligence/decision_products.py`
+    - `DecisionProductService.build_market_regime()`
+    - `DecisionProductService.refresh_market_regime_snapshot()`
+- 웹 리포트 파생 계산
+  - `app/web/app.js`
+    - `deriveMarketRegimeContext()`
+    - `marketSummaryText()`
+    - `regimeConfidenceLabel()`
+    - `regimeDirectionLabel()`
+    - `renderMarketReport()`
+
+### 3.2 Stock Decision
+- feature 생성
+  - `app/services/features/feature_builder.py`
+    - `build_features()`
+    - `build_event_pattern_snapshot()`
+- 시그널 계산
+  - `app/services/signal/scorer.py`
+    - `evaluate_signal()`
+- 품질 게이트
+  - `app/services/quality/gates.py`
+    - `passes_quality_gate()`
+- 제품 응답 조립
+  - `app/services/intelligence/decision_products.py`
+    - `DecisionProductService.build_stock_decision()`
+    - `_component_scores()`
+    - `_horizon_scores()`
+    - `_state_label()`
+    - `_relative_strength()`
+    - `_bullish_factors()`
+    - `_bearish_factors()`
+    - `_timeline()`
+    - `_sector_momentum_summary()`
+    - `_sector_peer_snapshot()`
+    - `_financial_summary()`
+    - `_macro_summary()`
+    - `_event_pattern_summary()`
+- 웹 리포트 파생 계산
+  - `app/web/app.js`
+    - `deriveStockDecisionContext()`
+    - `dominantStockHorizon()`
+    - `stockValidityWindow()`
+    - `stockChangedVariables()`
+    - `stockConflictSignals()`
+    - `stockPeriodNarratives()`
+    - `stockLayerNarratives()`
+    - `stockTechnicalWarnings()`
+    - `stockMacroSensitivity()`
+    - `splitDocumentSummaries()`
+    - `renderStockReport()`
+
+## 4. Market Regime 리포트 근거 문서화
+
+### 4.1 원천 데이터
+| 데이터 구분 | 원천 | 실제 사용 필드 | 사용 목적 |
+| --- | --- | --- | --- |
+| 대표 종목 가격 일봉 | KIS | 최근 60일 `close` | 시장 평균 20일 수익률, 대표 종목 변동성, 섹터 점수 계산 |
+| 종목-섹터 매핑 | `MarketPulseEngine._sector_map` | `ticker -> sector` | 섹터별 평균 수익률/변동성 계산 |
+| 거시 스냅샷 | `fetch_macro()` | `surprise_std`, `actual`, `indicator_name`, `country` | 시장 체제 점수, 핵심 거시 변수, 글로벌 리스크 설명 |
+| 정책/문서 힌트 | `external_document` | `source_system`, `title`, `summary_json.summary` | 전략 힌트, 정책/문서 근거 문장 생성 |
+| 응답 상태 | 메모리 캐시, 배치 스냅샷, 실시간 수집 | `pipeline_status` | 신선도, 생성 경로, 응답 신뢰도 표시 |
+
+### 4.2 핵심 계산식
+- 종목 20일 수익률
+  - `ret20 = (마지막 종가 / 20거래일 전 종가) - 1`
+- 종목 20일 변동성 프록시
+  - `vol20 = (최근 20일 최고 종가 - 최근 20일 최저 종가) / 최근 20일 최고 종가`
+- 섹터 점수
+  - `sector_score = (sector_ret * 100) - (sector_vol * 30)`
+- 평균 거시 압력
+  - `macro_pressure = mean(surprise_std)`
+- 시장 체제 점수
+  - `regime_score = (avg_ret20 * 100) - (avg_vol20 * 50) - (macro_pressure * 20)`
+- 체제 분류
+  - `regime_score >= 2.5` -> `위험선호`
+  - `regime_score <= -2.5` -> `위험회피`
+  - 그 외 -> `중립`
+
+### 4.3 리포트 항목별 근거
+#### 상단 핵심 결론
+- 체제
+  - `data.regime`
+- 한 줄 결론
+  - `marketSummaryText()`가 `regime`, 선도 섹터, 확신도를 조합해 생성한다.
+- 체제 기울기
+  - `regimeDirectionLabel(data.regime_score)`
+- 현재 확신도
+  - `regimeConfidenceLabel(data.regime_score, risingRatio)`
+- 기준일 / 데이터 반영 시각 / 시장 구간 / 응답 경로
+  - `as_of_date`, `generated_at_utc`, `pipeline_status`
+
+#### 요약 KPI 4개
+- 시장 체제 점수
+  - `data.regime_score`
+- 체제 기울기
+  - `regimeDirectionLabel()`
+- 현재 확신도
+  - `regimeConfidenceLabel()`
+- 대표 종목 상승 비중
+  - `positive representatives / total representatives * 100`
+
+#### 시장 체제 분해
+- 종합 체제
+  - `clamp(50 + regime_score * 6)`
+- 가격/추세
+  - `clamp(50 + avgRet * 3.2 + breadthDelta * 4)`
+- 변동성
+  - `clamp(100 - avgVol * 4.5)`
+- 유동성/금리 압력
+  - `clamp(55 - average(macroScores) * 10)`
+- 정책 우호도
+  - `clamp(48 + strategy_hints.length * 3)`
+- 글로벌 리스크
+  - `clamp(50 + mean(abs(macroScores)) * 10)`
+- breadth
+  - `clamp(risingRatio * 100)`
+- 의미
+  - 웹이 사용자의 이해를 돕기 위해 0~100 스케일로 다시 표현한 설명용 점수다.
+
+#### 핵심 원인 Top 5
+- 상승 동인
+  - 강세 섹터 상위 3개 + 양(+) 거시 row 상위 2개
+- 하락/제약 동인
+  - 약세 섹터 하위 3개 + 음(-) 거시 row 상위 2개
+- 민감 거시 변수
+  - `abs(surprise_std)` 기준 상위 3개
+- 최근 체제 해석 힌트
+  - `strategy_hints` 앞 5개
+
+#### 섹터 판단
+- 강세 섹터 Top N
+  - `strong_sectors`
+- 약세 섹터 Bottom N
+  - `weak_sectors`
+- 대표 종목 근거
+  - `representative_symbols`
+  - 화면에서는 `종목명(ticker): 20일 수익률, 변동성` 형식으로 표시
+
+#### 투자자 행동 연결
+- `actionGuide`는 체제별 정적 규칙을 사용한다.
+  - 위험선호 -> 선도 섹터 중심 접근
+  - 위험회피 -> 방어적 운영
+  - 중립 -> 선별 대응
+- 이 영역은 새 점수를 만드는 단계가 아니라 체제 해석을 행동 언어로 번역하는 단계다.
+
+#### 반증 조건
+- 무효화 조건
+  - 금리 surprise 확대, 환율 급등, 정책 기대 후퇴 등 고정 규칙
+- 재확인할 거시 항목
+  - `sensitiveMacro`
+- 체제 전환 신호
+  - breadth 약화, macro surprise 연속, 선도 섹터 붕괴 같은 규칙 기반 문구
+
+#### 신뢰도 및 데이터 설명
+- 가격, 거시, 정책/문서, 응답 경로, 최신성, 한계를 함께 보여준다.
+- breadth와 섹터 판단은 대표 종목 기반 프록시라는 점을 명시한다.
+
+## 5. Stock Decision 리포트 근거 문서화
+
+### 5.1 원천 데이터
+| 데이터 구분 | 원천 | 실제 사용 필드 | 사용 목적 |
+| --- | --- | --- | --- |
+| 가격 일봉 | KIS | `open`, `high`, `low`, `close`, `volume` | MA, RSI, 수익률, 거래량, ATR, 갭 수익률 계산 |
+| 뉴스 | NAVER, NewsAPI | `title`, `content_text`, `sentiment_score`, `attention_score` | 뉴스 감성, 주목도, 타임라인, 상승/하락 근거 |
+| 공시 | OpenDART, KIND | `event_type`, `impact_score`, `material_disclosure_*` | 공시 호재/악재 점수, 이벤트 점수 |
+| 재무제표 | OpenDART | `revenue_growth_yoy`, `operating_margin`, `net_margin`, `debt_ratio`, `current_ratio`, `operating_cashflow_margin` | 재무/실적/가치 판단 |
+| 거시 데이터 | 국내외 거시 커넥터 | `surprise_index`, `surprise_std`, `macro_risk_score`, `macro_support_score` | 시장 영향, 종목 관련 거시 근거 |
+| 섹터 모멘텀 | 내부 계산 | `sector_coupling_score`, `sector_fund_flow_score`, `sector_breadth_score`, `sector_leader_relative_strength`, `peer_rows` | 섹터 영향, 대장주 연동, peer 비교 |
+| 미국 야간 전이 | 내부 계산 | `transmission_beta`, `transmission_corr`, `overnight_signal`, `volatility_spillover_score` | 장전 미국 증시 영향 |
+| 유사 이벤트 패턴 | 내부 계산 | `pattern_bias`, `pattern_confidence`, `avg_return_1d`, `avg_return_5d` | 이벤트 당일 변동성 주의, 유사 패턴 반영 |
+| 문서 요약 | Gemini + fallback | `document_summaries`, `material_disclosures` | 이벤트 근거 문장 생성 |
+
+### 5.2 데이터 처리 흐름
+1. `AnalysisPipeline.run()`이 가격, 뉴스, 공시, 재무제표, 거시, 섹터 모멘텀, 미국 야간 전이 데이터를 수집한다.
+2. `build_features()`가 정규화 feature를 만든다.
+3. `evaluate_signal()`이 신호 점수, 품질 점수, 상승/하락 근거, 리스크 플래그를 계산한다.
+4. `passes_quality_gate()`가 최소 품질 조건을 확인하고 미달 시 리스크 플래그를 추가한다.
+5. `build_stock_decision()`이 영향 계층 점수, 기간별 점수, 최종 결론, 근거 리스트를 만든다.
+6. `renderStockReport()`가 사용자 이해를 위한 파생 문장과 설명용 프록시 점수를 계산한다.
+
+### 5.3 feature 계산식
+`build_features()`
+- `ma_20`, `ma_60`
+  - 최근 20일, 60일 종가 평균
+- `rsi_14`
+  - 최근 14일 RSI
+- `volatility_20d`
+  - 최근 20일 종가 표준편차 / MA20
+- `atr_14_pct`
+  - ATR / 종가
+- `return_1d`, `return_5d`, `return_20d`
+  - 기간 수익률
+- `gap_return_1d`
+  - 당일 시가 / 전일 종가 - 1
+- `rel_volume`
+  - 최근 거래량 / 최근 20일 평균 거래량
+- `turnover_value_zscore`
+  - 거래대금 z-score
+- 텍스트/공시 파생
+  - `news_sentiment_7d`, `news_attention_score`, `text_keyword_density`
+  - `disclosure_bullish_score`, `disclosure_bearish_score`, `disclosure_net_score`, `material_disclosure_severity`
+  - `supply_contract_score`, `financing_risk_score`, `shareholder_return_score`, `governance_score`
+- 거시 파생
+  - `macro_pressure_score`, `macro_support_score`, `macro_global_score`
+  - `macro_surprise_index`, `macro_surprise_abs_mean`, `macro_consensus_coverage`
+- 섹터 파생
+  - `sector_coupling_score`, `sector_fund_flow_score`, `sector_breadth_score`, `sector_leader_relative_strength`
+- 재무 파생
+  - `revenue_growth_yoy`, `operating_margin`, `net_margin`, `debt_ratio`, `current_ratio`, `operating_cashflow_margin`
+- 이벤트 파생
+  - `event_volatility_score`, `event_pattern_bias`, `event_pattern_confidence`
+- 미국 야간 파생
+  - `overnight_us_beta`, `overnight_us_correlation`, `overnight_us_index_return`, `overnight_us_signal`, `overnight_us_vol_spillover`
+
+### 5.4 시그널 점수와 품질 점수
+`evaluate_signal()`
+
+#### 시그널 점수 주요 가점
+- 추세/기술
+  - `price_vs_ma20 > 0` -> +8
+  - `ma_20 > ma_60` -> +10
+  - `return_5d > 0` -> 최대 +8
+  - `rsi_14 <= 30` -> +4
+  - `rel_volume > 1.3` -> +6
+  - `turnover_value_zscore > 1.0` -> +4
+- 텍스트/이벤트
+  - `news_sentiment_7d * 8`
+  - `news_attention_score * 4`
+  - `disclosure_impact_30d * 10`
+  - `disclosure_bullish_score * 7`
+  - `disclosure_net_score * 10`
+  - `material_disclosure_severity * 4`
+  - `supply_contract_score * 5`
+- 섹터/거시
+  - `overnight_us_signal * 60`
+  - `sector_fund_flow_score * 6`
+  - `max(sector_coupling_score - 0.5, 0) * 8`
+  - `sector_breadth_score * 4`
+  - `sector_leader_relative_strength * 10`
+  - `macro_support_score * 3`
+  - `macro_global_score * 2`
+  - `macro_surprise_index * 4`
+  - `event_pattern_bias * 20 * max(0.3, event_pattern_confidence)`
+- 재무
+  - 매출 성장률, 영업이익률, 순이익률, 유동비율, 영업현금흐름 마진 가점
+
+#### 시그널 점수 주요 감점
+- `return_5d < -0.05` -> -5
+- `rsi_14 >= 75` -> -10
+- `financing_risk_score * 9`
+- `max(material_disclosure_severity - 0.7, 0) * 5`
+- `max(-overnight_us_signal, 0) * 70`
+- `max(macro_pressure_score, 0) * 7`
+- `macro_surprise_abs_mean * 2.5`
+- `max(event_volatility_score - 0.6, 0) * 15`
+- `debt_ratio` 과다 구간 감점
+
+#### 품질 점수 감점
+- 시작값 `82`
+- `volatility_20d > 0.08` -> -12
+- `atr_14_pct > 0.06` -> -8
+- `rel_volume < 0.5` -> -10
+- `sector_fund_flow_score < 0.2` -> -4
+- `sector_coupling_score < 0.35` -> -3
+- `financing_risk_score >= 0.5` -> -8
+- `disclosure_bearish_score >= 0.6` -> -7
+- `material_disclosure_severity >= 0.75` -> -4
+- `overnight_us_vol_spillover >= 0.35` -> -4
+- `macro_surprise_abs_mean >= 0.8` -> -5
+- `event_volatility_score >= 0.65` -> -8
+- `text_keyword_density > 0.08` -> -4
+- `debt_ratio`, `current_ratio` 악화 추가 감점
+
+#### 시그널 유형 분류
+- `score >= 80` -> `SWING_CANDIDATE`
+- `score >= 60` -> `EVENT_MONITOR`
+- `score >= 45` -> `NEUTRAL`
+- 그 외 -> `RISK_WARNING`
+- 사용자 노출 시에는 한글 라벨로 변환한다.
+
+### 5.5 영향 계층 점수
+`_component_scores()`
+- 시장 영향 점수
+  - `50 + macro_support_score*24 - max(0, macro_pressure_score)*26 + macro_global_score*12`
+- 섹터 영향 점수
+  - `50 + price_vs_ma20*55 + return_20d*28 + (rel_volume-1.0)*8 + sector_fund_flow_score*18 + (sector_coupling_score-0.5)*24 + sector_breadth_score*10 + sector_leader_relative_strength*20`
+- 종목 고유 점수
+  - `50 + revenue_growth_yoy*35 + operating_margin*45 + net_margin*25 - max(debt_ratio-1.0, 0)*12`
+- 이벤트 영향 점수
+  - `50 + news_sentiment_7d*15 + disclosure_impact_30d*20 + supply_contract_score*18 - financing_risk_score*20`
+- 밸류에이션/자본효율 점수
+  - `50 + operating_cashflow_margin*40 + (current_ratio-1.0)*8 + shareholder_return_score*12 + governance_score*8`
+
+### 5.6 기간별 점수와 최종 결론
+`_horizon_scores()`
+- 단기
+  - `event_score*0.35 + sector_score*0.25 + market_score*0.15 + (50 + return_5d*180)*0.15 + (50 + news_attention_score*25 - abs(gap_return_1d)*120)*0.10`
+- 스윙
+  - `sector_score*0.30 + event_score*0.20 + market_score*0.20 + stock_specific_score*0.15 + (50 + price_vs_ma20*150 + return_20d*80)*0.15`
+- 중기
+  - `stock_specific_score*0.35 + valuation_score*0.25 + market_score*0.20 + sector_score*0.10 + (50 + macro_global_score*15 + revenue_growth_yoy*30)*0.10`
+- 최종 판단 점수
+  - `confidence_score = mean(short_term_score, swing_score, midterm_score)`
+- 결론 규칙
+  - `confidence_score >= 70 and quality_score >= 60` -> `분할매수`
+  - `confidence_score >= 60` -> `보유`
+  - `confidence_score < 45` -> `비중축소`
+  - 나머지 -> `관찰`
+- 이벤트 당일 예외
+  - `EVENT_DAY_VOLATILITY_MODE`이면 `분할매수`, `보유`도 `관찰`로 낮춘다.
+
+### 5.7 리포트 섹션별 근거
+#### 상단 핵심 결론
+- 종목
+  - `instrument_name`, `ticker` -> `종목명(ticker)`
+- 한 줄 투자 판단
+  - `${종목명}은 현재 ${conclusion} 관점이며, 상태는 ${state_label}`
+- 현재 상태 라벨
+  - `_state_label()`
+  - 규칙
+    - 이벤트 모드면 `변동성 주의`
+    - `close > ma_20 > ma_60` 그리고 `rsi_14 < 72` -> `상승 추세`
+    - `close < ma_20 < ma_60` -> `하락 추세`
+    - `rsi_14 >= 75` -> `단기 과열`
+    - 그 외 -> `중립 또는 박스권`
+- 판단 확신도
+  - `confidence_score`
+- 판단 유효 기간
+  - `stockValidityWindow()`
+  - 단기 우세면 `1~3거래일`, 스윙 우세면 `1~3주`, 중기 우세면 `1~3개월`
+- 주도 해석 기간
+  - `dominantStockHorizon()`
+
+#### 점수 구조 분해
+- 요약 카드
+  - 판단 점수 = `confidence_score`
+  - 품질 점수 = `quality_score`
+  - 시그널 점수 = `signal.score`
+  - 문서 근거 수 = `recent_timeline.length`
+- 세부 점수 바
+  - `short_term_score`, `swing_score`, `midterm_score`
+  - `market_score`, `sector_score`, `stock_specific_score`, `event_score`, `valuation_score`
+- 웹 파생 프록시
+  - 재무/실적 프록시
+    - `50 + revenue_growth_yoy*35 + operating_margin*80 + operating_cashflow_margin*50 - max(debt_ratio-1,0)*12`
+  - 밸류에이션 부담 프록시
+    - `40 + max(return_20d,0)*120 + max(rsi_14-60,0)*1.5 - operating_margin*20`
+  - 리스크 압력 프록시
+    - `financing_risk_score*35 + macro_pressure_score*25 + event_volatility_score*20 + risk_flags_count*4`
+
+#### 상승/하락 요인과 핵심 변수
+- 상승 근거 Top 5
+  - `_bullish_factors()`
+  - 양(+)의 `signal.reasons` + `document_summaries`
+- 하락 근거 Top 5
+  - `_bearish_factors()`
+  - 음(-)의 `signal.reasons` + `signal.risk_flags`
+- 판단을 가장 많이 바꾼 변수 3개
+  - `stockChangedVariables()`
+  - 후보: 섹터 자금 유입, 공시 순효과, 재무 체력, 거시 압력, 가격 모멘텀
+- 새롭게 추가된 핵심 근거
+  - `recent_timeline` 앞 3건 제목과 이벤트 유형
+- 약해진 근거
+  - `bearish_factors + signal.risk_flags` 앞 4개
+- 상충 신호
+  - `stockConflictSignals()`
+  - 추세 강세 vs 자금조달 리스크, 재무 양호 vs RSI 과열, 이벤트 당일 변동성 주의 등을 설명
+
+#### 기간별 해석
+- `stockPeriodNarratives()`
+- 단기
+  - RSI, 거래량, 뉴스/공시 이벤트 중심
+- 스윙
+  - 섹터 자금 유입, 20일 수익률 중심
+- 중기
+  - 매출 성장률, 영업이익률, 거시 압력 중심
+
+#### 시장-섹터-종목 계층 분석
+- `stockLayerNarratives()`
+- 시장 영향 점수
+  - 시장 체제가 종목에 주는 영향
+- 섹터 영향 점수
+  - 섹터 강도, 자금 흐름, 대장주 연동
+- 종목 고유 점수
+  - 재무, 실적, 공시, 회사 고유 이슈
+- 이벤트 영향 점수
+  - 뉴스/공시가 현재 가설을 얼마나 바꾸는지
+
+#### 섹터 모멘텀과 peer 비교
+- 섹터 모멘텀 요약
+  - `_sector_momentum_summary()`
+  - 섹터명, 대장주, 커플링 점수, 자금 유입, breadth, 대장주 대비 상대 강도
+- peer 표
+  - `_sector_peer_snapshot()`
+  - `leader -> target -> peer` 우선순위와 `return_20d` 정렬
+  - 컬럼: 구분, 종목명(ticker), 20일 수익률, 상대 거래량, 거래대금 Z-score
+
+#### 가격/수급/기술 해석
+- 현재 가격 위치
+  - 종가, MA20, MA60, 가격 괴리율, 상대 거래량, RSI
+- 변동성 / 경계 구간
+  - `volatility_20d`, `atr_14_pct`, `intraday_range_pct`
+- 기술 경고
+  - `stockTechnicalWarnings()`
+  - RSI 과열, 거래량 부족, 변동성 과다, 장중 변동폭 과다
+
+#### 이벤트·뉴스·공시 해석
+- 최근 이벤트 타임라인
+  - `_timeline()`
+  - `source`, `event_type`, `published_at`, `title`, `summary`
+- 최근 공시 핵심 요약
+  - `material_disclosures`
+  - `event_label`, `net_score`, `bullish_score`, `bearish_score`, `event_severity`, `rationale`
+- 최근 뉴스 핵심 요약
+  - `splitDocumentSummaries()`로 `source == news`만 추출
+- 이벤트 우선순위
+  - `material_disclosures`의 `net_score`, `event_label`, `title`
+
+#### 재무/실적/가치 판단
+- 최근 실적 흐름
+  - `_financial_summary()`
+  - 매출 증가율, 영업이익률, 순이익률, 부채비율, 유동비율, 영업현금흐름 마진
+- 이익 체력 / 재무 안정성
+  - 재무 수치를 다시 본문에 명시
+- 자금조달 / 주주환원 / 거버넌스
+  - `financing_risk_score`, `shareholder_return_score`, `governance_score`, `valuationBurden`
+
+#### 거시/정책 영향
+- 중요 거시 변수
+  - `stockMacroSensitivity()`
+  - 섹터별 민감도 규칙을 사용
+- 거시·정책 근거
+  - `_macro_summary()`
+  - 미국 야간 전이 우선 반영
+  - `global_macro_pressure`에서 종목/섹터 관련성 점수 `>= 0.85`인 항목만 선택
+- 유사 이벤트 패턴 요약
+  - `_event_pattern_summary()`
+  - 현재 이벤트 유형, 표본 수, 평균 1일/5일 반응, 패턴 신뢰도, 변동성 주의 모드
+
+#### 체크포인트 및 반증 조건
+- 체크포인트
+  - `_change_triggers()`
+  - 신규 공시, 거시 방향 전환, 거래대금 수반 돌파, 과열 해소, 자금조달 리스크 완화, 이벤트 후속 방향 확인
+- 이 판단이 틀릴 수 있는 이유
+  - `signal.risk_flags`
+- 무효화 / 상향 / 하향 재평가 조건
+  - `change_triggers[0]`, `bullish_factors[0]`, `bearish_factors[0]`
+- 다음 확인 예정 이벤트
+  - `recent_timeline` 앞 4건의 `event_type: title`
+
+#### 데이터 신뢰 및 설명 가능성
+- 사용 데이터 요약
+  - 문서/공시/뉴스 건수
+  - 공시 점수 데이터 건수
+  - 응답 경로
+  - 품질 점수
+- 최신성
+  - 생성 시각, freshnessLabel, 파이프라인 상태, 문서 근거 수
+- 해석 제약
+  - 밸류에이션 부담은 프록시
+  - 시장/섹터 영향은 대표 종목 기반
+  - 이벤트 해석은 문서 요약과 공시 점수화 결합
+
+### 5.8 결과 리포트가 근거 없이 보이지 않도록 하는 원칙
+- 결론 문장은 반드시 `conclusion`, `state_label`, `confidence_score`에서 나온다.
+- 상승/하락 요인은 반드시 `signal.reasons`, `risk_flags`, `document_summaries`, `material_disclosures`에서 나온다.
+- 기간별 문장은 반드시 기간 점수와 관련 feature를 바탕으로 생성한다.
+- 거시/정책 문장은 반드시 종목 관련성 필터를 통과한 항목만 사용한다.
+- 이벤트 섹션은 반드시 실제 타임라인 또는 공시 점수화 데이터만 사용한다.
+- peer 비교는 반드시 `sector_momentum.peer_rows` 기반이다.
+
+## 6. 다음 확장 범위
+- 다음 문서화 단계는 `Action Planner`, `Watchlist Alerts`를 같은 수준으로 상세화하는 것이다.
+- 현재 문서는 `Market Regime`, `Stock Decision` 두 제품을 우선적으로 상세 문서화한 상태다.

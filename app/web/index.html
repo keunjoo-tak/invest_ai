@@ -1,115 +1,266 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="ko">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>InvestAI Intelligence Console</title>
-    <link rel="stylesheet" href="/assets/styles.css" />
+    <title>InvestAI Intelligence Desk</title>
+    <link rel="stylesheet" href="/assets/styles.css?v=20260313b" />
   </head>
   <body>
-    <div class="bg-shape bg-shape-a"></div>
-    <div class="bg-shape bg-shape-b"></div>
-    <main class="container">
-      <header class="hero">
+    <div class="bg-orb orb-a"></div>
+    <div class="bg-orb orb-b"></div>
+    <div class="bg-grid"></div>
+
+    <main class="app-shell">
+      <header class="topbar">
         <div>
-          <p class="eyebrow">INVESTAI PRO CONSOLE</p>
-          <h1>투자 인텔리전스 운영 대시보드</h1>
-          <p class="sub">
-            종목 분석, 전략 시나리오, 시장 브리프, 문서형 배치 수집을 한 화면에서 실행하고 결과를 검증할 수 있습니다.
+          <p class="eyebrow">INVESTAI INTELLIGENCE DESK</p>
+          <h1>AI 기반 맞춤형 투자 분석 대시보드</h1>
+          <p class="hero-copy">
+            시장 체제, 종목 판단, 실행 계획, 관찰 알림을 리포트 형식으로 한 화면에서 확인합니다.
+            각 서비스는 버튼 실행 또는 파라미터 입력 패널을 통해 동작하며, 결과는 서비스 카드 아래에 근거 중심 리포트로 표시됩니다.
           </p>
         </div>
-        <div class="status-card">
-          <p class="status-label">백엔드 상태</p>
-          <p id="health-status" class="status-value">확인 중...</p>
-          <button id="refresh-health" class="btn ghost">상태 새로고침</button>
-        </div>
+        <aside class="health-panel">
+          <p class="meta-label">백엔드 상태</p>
+          <strong id="health-status" class="health-value">확인 중...</strong>
+          <button id="refresh-health" class="btn tertiary" type="button">상태 새로고침</button>
+        </aside>
       </header>
 
-      <section class="grid">
-        <article class="panel">
-          <h2>종목 통합 분석</h2>
-          <p class="desc">`POST /api/v1/analyze/ticker`</p>
-          <form id="analyze-form" class="form">
-            <label>종목(티커/종목명) <input name="ticker_or_name" value="005930" required /></label>
-            <label>알림 시도 <input type="checkbox" name="notify" checked /></label>
-            <label>강제 발송 <input type="checkbox" name="force_send" /></label>
-            <label>응답 언어
-              <select name="response_language">
-                <option value="ko" selected>ko</option>
-                <option value="en">en</option>
-              </select>
-            </label>
-            <button class="btn" type="submit">분석 실행</button>
-          </form>
-          <pre id="analyze-output" class="output"></pre>
+      <section class="overview-band">
+        <article class="overview-card">
+          <p class="meta-label">사용 흐름</p>
+          <h2>시장 확인 후 종목 판단, 실행 계획, 관찰 알림까지 연결</h2>
+          <p>
+            가장 먼저 `Market Regime`로 오늘의 시장 맥락을 확인하고, 이어서 종목별 판단과 실행 계획을 확인합니다.
+            바로 매매하지 않는 종목은 `Watchlist Alerts`에 저장해 지속 관찰합니다.
+          </p>
         </article>
-
-        <article class="panel">
-          <h2>Stock Insight</h2>
-          <p class="desc">`GET /api/v1/stock-insight/{ticker}`</p>
-          <form id="insight-form" class="form">
-            <label>종목 <input name="ticker" value="005930" required /></label>
-            <button class="btn" type="submit">조회</button>
-          </form>
-          <pre id="insight-output" class="output"></pre>
-        </article>
-
-        <article class="panel">
-          <h2>Trade Compass</h2>
-          <p class="desc">`POST /api/v1/trade-compass/analyze`</p>
-          <form id="trade-form" class="form">
-            <label>종목 <input name="ticker_or_name" value="005930" required /></label>
-            <label>리스크 성향
-              <select name="risk_profile">
-                <option value="conservative">conservative</option>
-                <option value="balanced" selected>balanced</option>
-                <option value="aggressive">aggressive</option>
-              </select>
-            </label>
-            <button class="btn" type="submit">전략 생성</button>
-          </form>
-          <pre id="trade-output" class="output"></pre>
-        </article>
-
-        <article class="panel">
-          <h2>Market Pulse</h2>
-          <p class="desc">`GET /api/v1/market-pulse/overview`</p>
-          <form id="pulse-form" class="form">
-            <button class="btn" type="submit">시장 브리프 조회</button>
-          </form>
-          <pre id="pulse-output" class="output"></pre>
-        </article>
-
-        <article class="panel">
-          <h2>문서 수집 미리보기</h2>
-          <p class="desc">`POST /api/v1/ingestion/crawl/preview`</p>
-          <form id="preview-form" class="form">
-            <label>소스 ID
-              <select name="source_id">
-                <option>S06</option>
-                <option>S28</option>
-                <option selected>S16</option>
-                <option>S18</option>
-              </select>
-            </label>
-            <button class="btn" type="submit">미리보기</button>
-          </form>
-          <pre id="preview-output" class="output"></pre>
-        </article>
-
-        <article class="panel">
-          <h2>배치 실행</h2>
-          <p class="desc">KIND / 정책브리핑 / 한국은행</p>
-          <div class="row">
-            <button id="run-kind" class="btn">KIND 배치</button>
-            <button id="run-policy" class="btn">정책브리핑 배치</button>
-            <button id="run-bok" class="btn">BOK 배치</button>
-          </div>
-          <pre id="batch-output" class="output"></pre>
+        <article class="overview-card accent-card">
+          <p class="meta-label">리포트 구조</p>
+          <h2>최종 결론을 먼저, 근거 데이터는 그 아래</h2>
+          <p>
+            각 리포트의 첫 영역에는 사용자가 바로 판단할 수 있는 최종 답변을 배치하고,
+            그 아래에는 활용 데이터 요약, 근거 지표, 이벤트 타임라인, 정책/거시 배경을 정리합니다.
+          </p>
         </article>
       </section>
+
+      <section class="service-grid">
+        <article class="service-card service-market" id="service-market">
+          <div class="service-head">
+            <div>
+              <p class="service-kicker">즉시 실행</p>
+              <h3>Market Regime</h3>
+              <p class="service-desc">오늘의 시장 체제와 강세·약세 섹터를 리포트로 확인합니다.</p>
+            </div>
+            <button id="launch-market" class="btn primary" type="button">리포트 실행</button>
+          </div>
+          <div id="report-market" class="report-mount report-empty">시장 리포트를 실행하면 이 영역에 근거 중심 리포트가 생성됩니다.</div>
+        </article>
+
+        <article class="service-card service-stock" id="service-stock">
+          <div class="service-head">
+            <div>
+              <p class="service-kicker">파라미터 입력</p>
+              <h3>Stock Decision</h3>
+              <p class="service-desc">종목명 또는 티커를 입력해 현재 판단과 근거를 리포트로 확인합니다.</p>
+            </div>
+            <button id="launch-stock" class="btn primary" type="button">조건 입력 후 실행</button>
+          </div>
+          <div id="report-stock" class="report-mount report-empty">종목 판단 리포트는 실행 후 이 영역에 출력됩니다.</div>
+        </article>
+
+        <article class="service-card service-action" id="service-action">
+          <div class="service-head">
+            <div>
+              <p class="service-kicker">파라미터 입력</p>
+              <h3>Action Planner</h3>
+              <p class="service-desc">위험 성향과 투자 기간에 맞는 실행 계획을 리포트 형식으로 생성합니다.</p>
+            </div>
+            <button id="launch-action" class="btn primary" type="button">조건 입력 후 실행</button>
+          </div>
+          <div id="report-action" class="report-mount report-empty">행동 계획 리포트는 실행 후 이 영역에 출력됩니다.</div>
+        </article>
+
+        <article class="service-card service-watch" id="service-watch">
+          <div class="service-head">
+            <div>
+              <p class="service-kicker">파라미터 입력</p>
+              <h3>Watchlist Alerts</h3>
+              <p class="service-desc">즉시 대응 여부와 관찰 트리거를 점검하고 워치리스트를 저장합니다.</p>
+            </div>
+            <div class="head-actions">
+              <button id="launch-watch" class="btn primary" type="button">즉시 점검</button>
+              <button id="launch-subscription" class="btn secondary" type="button">워치리스트 저장</button>
+            </div>
+          </div>
+          <div id="report-watch" class="report-mount report-empty">관찰 알림 리포트는 실행 후 이 영역에 출력됩니다.</div>
+          <div class="watchlist-block">
+            <div class="watchlist-head">
+              <div>
+                <p class="meta-label">저장형 워치리스트</p>
+                <h4>현재 등록된 관찰 종목</h4>
+              </div>
+              <button id="refresh-subscriptions" class="btn tertiary" type="button">목록 새로고침</button>
+            </div>
+            <div id="subscription-list" class="subscription-list"></div>
+            <div id="subscription-output" class="inline-feedback"></div>
+          </div>
+        </article>
+      </section>
+
+      <section class="ops-zone">
+        <div class="ops-head">
+          <div>
+            <p class="eyebrow">OPERATOR TOOLS</p>
+            <h2>문서 수집/미리보기와 운영 배치</h2>
+          </div>
+          <button id="toggle-admin" class="btn tertiary" type="button">운영 도구 열기/닫기</button>
+        </div>
+        <div id="admin-body" class="ops-grid hidden">
+          <article class="ops-card">
+            <div class="ops-card-head">
+              <div>
+                <p class="meta-label">Source Preview</p>
+                <h3>소스 미리보기</h3>
+              </div>
+              <button id="launch-preview" class="btn secondary" type="button">파라미터 입력</button>
+            </div>
+            <pre id="preview-output" class="output-block"></pre>
+          </article>
+          <article class="ops-card">
+            <div class="ops-card-head">
+              <div>
+                <p class="meta-label">Batch Execution</p>
+                <h3>운영 배치 실행</h3>
+              </div>
+            </div>
+            <div class="batch-row">
+              <button id="run-kind" class="btn secondary" type="button">KIND</button>
+              <button id="run-policy" class="btn secondary" type="button">정책브리핑</button>
+              <button id="run-bok" class="btn secondary" type="button">한국은행</button>
+              <button id="run-naver-headlines" class="btn secondary" type="button">네이버 헤드라인</button>
+              <button id="run-market-snapshot" class="btn tertiary" type="button">시장 체제 스냅샷</button>
+            </div>
+            <pre id="batch-output" class="output-block"></pre>
+          </article>
+        </div>
+      </section>
     </main>
-    <script type="module" src="/assets/app.js"></script>
+
+    <div id="sheet-backdrop" class="sheet-backdrop hidden"></div>
+    <aside id="sheet" class="sheet hidden" aria-hidden="true">
+      <div class="sheet-head">
+        <div>
+          <p id="sheet-kicker" class="meta-label">입력 패널</p>
+          <h3 id="sheet-title">서비스 실행</h3>
+        </div>
+        <button id="sheet-close" class="icon-btn" type="button" aria-label="닫기">×</button>
+      </div>
+      <div id="sheet-body" class="sheet-body"></div>
+    </aside>
+
+    <template id="tpl-stock-form">
+      <form class="sheet-form" data-form-kind="stock">
+        <label>티커 또는 종목명
+          <input name="ticker" value="005930" required />
+        </label>
+        <label>기준일
+          <input name="as_of_date" type="date" />
+        </label>
+        <label>조회 기간(일)
+          <input name="lookback_days" type="number" min="60" max="730" value="365" />
+        </label>
+        <div class="sheet-actions">
+          <button class="btn primary" type="submit">종목 판단 리포트 생성</button>
+        </div>
+      </form>
+    </template>
+
+    <template id="tpl-action-form">
+      <form class="sheet-form" data-form-kind="action">
+        <label>티커 또는 종목명
+          <input name="ticker_or_name" value="005930" required />
+        </label>
+        <label>투자 기간
+          <select name="investment_horizon">
+            <option value="short_term">단기</option>
+            <option value="swing" selected>스윙</option>
+            <option value="midterm">중기</option>
+          </select>
+        </label>
+        <label>위험 성향
+          <select name="risk_profile">
+            <option value="conservative">보수형</option>
+            <option value="balanced" selected>균형형</option>
+            <option value="aggressive">공격형</option>
+          </select>
+        </label>
+        <label>투자 목적
+          <select name="objective">
+            <option value="new_entry" selected>신규 진입</option>
+            <option value="add">추가 매수</option>
+            <option value="buy_hold">보유 유지</option>
+            <option value="partial_take">부분 차익</option>
+            <option value="full_exit">전량 정리</option>
+          </select>
+        </label>
+        <label>평균단가(보유 시 선택)
+          <input name="avg_buy_price" type="number" min="0" step="0.01" placeholder="예: 72000" />
+        </label>
+        <label class="checkbox-line"><input type="checkbox" name="has_position" /> 현재 보유 중</label>
+        <div class="sheet-actions">
+          <button class="btn primary" type="submit">행동 계획 리포트 생성</button>
+        </div>
+      </form>
+    </template>
+
+    <template id="tpl-watch-form">
+      <form class="sheet-form" data-form-kind="watch">
+        <label>티커 또는 종목명
+          <input name="ticker_or_name" value="005930" required />
+        </label>
+        <label class="checkbox-line"><input type="checkbox" name="notify" /> 알림 발송 판단 포함</label>
+        <label class="checkbox-line"><input type="checkbox" name="force_send" /> 강제 발송 플래그 포함</label>
+        <div class="sheet-actions">
+          <button class="btn primary" type="submit">관찰 알림 리포트 생성</button>
+        </div>
+      </form>
+    </template>
+
+    <template id="tpl-subscription-form">
+      <form class="sheet-form" data-form-kind="subscription">
+        <label>티커 또는 종목명
+          <input name="ticker_or_name" value="005930" required />
+        </label>
+        <label>메모
+          <input name="notes" value="실적과 정책 이벤트 관찰" />
+        </label>
+        <div class="sheet-actions">
+          <button class="btn primary" type="submit">워치리스트 저장</button>
+        </div>
+      </form>
+    </template>
+
+    <template id="tpl-preview-form">
+      <form class="sheet-form" data-form-kind="preview">
+        <label>소스 ID
+          <select name="source_id">
+            <option>S06</option>
+            <option>S16</option>
+            <option>S18</option>
+            <option>S28</option>
+          </select>
+        </label>
+        <div class="sheet-actions">
+          <button class="btn primary" type="submit">소스 미리보기 실행</button>
+        </div>
+      </form>
+    </template>
+
+    <script type="module" src="/assets/app.js?v=20260313b"></script>
   </body>
-  </html>
+</html>
 

@@ -11,6 +11,7 @@ from app.schemas.intelligence import StockInsightResponse
 from app.services.features.feature_builder import build_features
 from app.services.ingestion.providers import SourceProviderClient
 from app.services.llm.gemini_client import GeminiClient
+from app.services.localization.signal_localizer import localize_signal_result
 from app.services.quality.gates import passes_quality_gate
 from app.services.signal.scorer import evaluate_signal
 
@@ -67,6 +68,7 @@ class StockInsightEngine:
             features=features.model_dump(mode="json"),
         )
         explanation = self.gemini.translate_json_to_korean(explanation)
+        signal = localize_signal_result(signal, "ko")
 
         state_label = self._state_label(features.close, features.ma_20, features.ma_60, features.rsi_14)
         rel_strength = self._build_relative_strength(profile.ticker, d)

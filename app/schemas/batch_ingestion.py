@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import datetime
 
@@ -13,7 +13,7 @@ class KindBatchRequest(BaseModel):
 
 
 class GenericBatchRequest(BaseModel):
-    """정책브리핑/한국은행 배치 요청."""
+    """문서형 배치 요청."""
 
     max_items: int = Field(default=30, ge=1, le=200, description="최대 수집 건수")
 

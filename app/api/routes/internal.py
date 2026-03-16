@@ -205,6 +205,207 @@ def probe_macro_snapshot(req: TickerIngestionRequest) -> IngestionProbeResponse:
 
 
 @router.post(
+    "/ingestion/macro/bok",
+    response_model=IngestionProbeResponse,
+    summary="BOK ECOS 핵심지표 수집 진단",
+    description="한국은행 ECOS KeyStatisticList API를 호출해 환율, 금리, 유동성 등 핵심 거시지표 수집 결과를 반환합니다.",
+)
+def probe_bok_macro(req: TickerIngestionRequest) -> IngestionProbeResponse:
+    """BOK ECOS 기반 거시지표 수집 상태를 확인한다."""
+    as_of_date = req.as_of_date or date.today()
+    rows = providers._fetch_macro_bok(as_of_date)
+    return IngestionProbeResponse(
+        source="bok_ecos_macro",
+        success=bool(rows),
+        as_of_utc=_now(),
+        item_count=len(rows),
+        details={"as_of_date": str(as_of_date)},
+        sample=rows[: min(5, len(rows))],
+    )
+
+
+@router.post(
+    "/ingestion/macro/kosis",
+    response_model=IngestionProbeResponse,
+    summary="KOSIS 메타데이터 수집 진단",
+    description="KOSIS OpenAPI 검색 결과를 활용해 CPI, 실업률, 산업생산, 수출 관련 최신 통계 메타데이터 수집 결과를 반환합니다.",
+)
+def probe_kosis_macro(req: TickerIngestionRequest) -> IngestionProbeResponse:
+    """KOSIS 기반 거시 보조지표 수집 상태를 확인한다."""
+    as_of_date = req.as_of_date or date.today()
+    rows = providers._fetch_macro_kosis(as_of_date)
+    return IngestionProbeResponse(
+        source="kosis_macro_search",
+        success=bool(rows),
+        as_of_utc=_now(),
+        item_count=len(rows),
+        details={"as_of_date": str(as_of_date)},
+        sample=rows[: min(5, len(rows))],
+    )
+
+
+
+@router.post(
+    "/ingestion/macro/fred",
+    response_model=IngestionProbeResponse,
+    summary="FRED 거시지표 수집 진단",
+    description="FRED API를 호출해 금리, 고용, 시장, 성장 지표를 정규화된 형태로 반환합니다.",
+)
+def probe_fred_macro(req: TickerIngestionRequest) -> IngestionProbeResponse:
+    as_of_date = req.as_of_date or date.today()
+    rows = providers._fetch_macro_fred(as_of_date)
+    return IngestionProbeResponse(source="fred_macro", success=bool(rows), as_of_utc=_now(), item_count=len(rows), details={"as_of_date": str(as_of_date)}, sample=rows[: min(5, len(rows))])
+
+
+@router.post(
+    "/ingestion/macro/bls",
+    response_model=IngestionProbeResponse,
+    summary="BLS 거시지표 수집 진단",
+    description="BLS Public Data API를 호출해 CPI, 실업률, 비농업고용 지표를 정규화된 형태로 반환합니다.",
+)
+def probe_bls_macro(req: TickerIngestionRequest) -> IngestionProbeResponse:
+    as_of_date = req.as_of_date or date.today()
+    rows = providers._fetch_macro_bls(as_of_date)
+    return IngestionProbeResponse(source="bls_macro", success=bool(rows), as_of_utc=_now(), item_count=len(rows), details={"as_of_date": str(as_of_date)}, sample=rows[: min(5, len(rows))])
+
+
+@router.post(
+    "/ingestion/macro/bea",
+    response_model=IngestionProbeResponse,
+    summary="BEA 거시지표 수집 진단",
+    description="BEA API를 호출해 GDP와 PCE 지표를 정규화된 형태로 반환합니다.",
+)
+def probe_bea_macro(req: TickerIngestionRequest) -> IngestionProbeResponse:
+    as_of_date = req.as_of_date or date.today()
+    rows = providers._fetch_macro_bea(as_of_date)
+    return IngestionProbeResponse(source="bea_macro", success=bool(rows), as_of_utc=_now(), item_count=len(rows), details={"as_of_date": str(as_of_date)}, sample=rows[: min(5, len(rows))])
+
+
+@router.post(
+    "/ingestion/macro/fiscaldata",
+    response_model=IngestionProbeResponse,
+    summary="Fiscal Data 수집 진단",
+    description="미국 재무부 Fiscal Data API를 호출해 국가부채와 재정수지 지표를 정규화된 형태로 반환합니다.",
+)
+def probe_fiscaldata_macro(req: TickerIngestionRequest) -> IngestionProbeResponse:
+    as_of_date = req.as_of_date or date.today()
+    rows = providers._fetch_macro_fiscaldata(as_of_date)
+    return IngestionProbeResponse(source="fiscaldata_macro", success=bool(rows), as_of_utc=_now(), item_count=len(rows), details={"as_of_date": str(as_of_date)}, sample=rows[: min(5, len(rows))])
+
+
+@router.post(
+    "/ingestion/macro/oecd",
+    response_model=IngestionProbeResponse,
+    summary="OECD 거시지표 수집 진단",
+    description="OECD 거시지표를 수집하고 정규화된 스냅샷 행으로 반환합니다.",
+)
+def probe_oecd_macro(req: TickerIngestionRequest) -> IngestionProbeResponse:
+    as_of_date = req.as_of_date or date.today()
+    rows = providers._fetch_macro_oecd(as_of_date)
+    return IngestionProbeResponse(source="oecd_macro", success=bool(rows), as_of_utc=_now(), item_count=len(rows), details={"as_of_date": str(as_of_date)}, sample=rows[: min(5, len(rows))])
+
+
+@router.post(
+    "/ingestion/macro/worldbank",
+    response_model=IngestionProbeResponse,
+    summary="World Bank 거시지표 수집 진단",
+    description="World Bank API에서 미국, 유럽, 글로벌 거시지표를 수집합니다.",
+)
+def probe_worldbank_macro(req: TickerIngestionRequest) -> IngestionProbeResponse:
+    as_of_date = req.as_of_date or date.today()
+    rows = providers._fetch_macro_world_bank(as_of_date)
+    return IngestionProbeResponse(source="worldbank_macro", success=bool(rows), as_of_utc=_now(), item_count=len(rows), details={"as_of_date": str(as_of_date)}, sample=rows[: min(5, len(rows))])
+
+
+@router.post(
+    "/ingestion/macro/imf",
+    response_model=IngestionProbeResponse,
+    summary="IMF 거시지표 수집 진단",
+    description="IMF DataMapper API에서 국제 성장률과 물가 지표를 수집합니다.",
+)
+def probe_imf_macro(req: TickerIngestionRequest) -> IngestionProbeResponse:
+    as_of_date = req.as_of_date or date.today()
+    rows = providers._fetch_macro_imf(as_of_date)
+    return IngestionProbeResponse(source="imf_macro", success=bool(rows), as_of_utc=_now(), item_count=len(rows), details={"as_of_date": str(as_of_date)}, sample=rows[: min(5, len(rows))])
+
+
+@router.post(
+    "/ingestion/macro/eurostat",
+    response_model=IngestionProbeResponse,
+    summary="Eurostat 거시지표 수집 진단",
+    description="Eurostat에서 유로존 물가, 실업률, 산업생산 지표를 수집합니다.",
+)
+def probe_eurostat_macro(req: TickerIngestionRequest) -> IngestionProbeResponse:
+    as_of_date = req.as_of_date or date.today()
+    rows = providers._fetch_macro_eurostat(as_of_date)
+    return IngestionProbeResponse(source="eurostat_macro", success=bool(rows), as_of_utc=_now(), item_count=len(rows), details={"as_of_date": str(as_of_date)}, sample=rows[: min(5, len(rows))])
+
+
+@router.post(
+    "/ingestion/disclosures/dart/financial-statements",
+    response_model=IngestionProbeResponse,
+    summary="OpenDART 재무제표 수집 진단",
+    description="OpenDART 단일회사 주요계정 API를 호출해 분석에 사용할 수 있는 재무 지표를 반환합니다.",
+)
+def probe_dart_financial_statements(req: TickerIngestionRequest) -> IngestionProbeResponse:
+    as_of_date = req.as_of_date or date.today()
+    profile = providers.resolve_instrument(req.ticker_or_name)
+    row = providers.fetch_financial_statements(profile.ticker, as_of_date)
+    return IngestionProbeResponse(source="dart_financial_statements", success=bool(row), as_of_utc=_now(), item_count=1 if row else 0, details={"ticker": profile.ticker, "as_of_date": str(as_of_date)}, sample=[{k: v for k, v in row.items() if k != "raw_rows"}] if row else [])
+
+
+@router.post(
+    "/ingestion/event-stream/official-calendar",
+    response_model=IngestionProbeResponse,
+    summary="공식 이벤트 캘린더 스트림 진단",
+    description="Fed, ECB, Eurostat, NBS 등 공식 기관의 캘린더 항목을 수집합니다.",
+)
+def probe_official_event_stream(req: TickerIngestionRequest) -> IngestionProbeResponse:
+    as_of_date = req.as_of_date or date.today()
+    rows = providers.fetch_official_event_stream(as_of_date, horizon_days=req.days)
+    return IngestionProbeResponse(source="official_event_stream", success=bool(rows), as_of_utc=_now(), item_count=len(rows), details={"as_of_date": str(as_of_date), "horizon_days": req.days}, sample=rows[: min(5, len(rows))])
+
+
+@router.post(
+    "/ingestion/event-stream/broad-issue",
+    response_model=IngestionProbeResponse,
+    summary="광범위 이슈 스트림 진단",
+    description="GDELT와 공식 기관 발표문을 수집해 광범위 이슈 스트림을 구성합니다.",
+)
+def probe_broad_issue_stream(req: TickerIngestionRequest) -> IngestionProbeResponse:
+    as_of_date = req.as_of_date or date.today()
+    rows = providers.fetch_broad_issue_stream(as_of_date, lookback_days=req.days)
+    return IngestionProbeResponse(source="broad_issue_stream", success=bool(rows), as_of_utc=_now(), item_count=len(rows), details={"as_of_date": str(as_of_date), "lookback_days": req.days}, sample=[{"title": str(x.get("title") or ""), "url": str(x.get("url") or ""), "publish_time_utc": str(x.get("publish_time_utc") or "")} for x in rows[: min(5, len(rows))]])
+
+
+@router.post(
+    "/ingestion/news/newsapi",
+    response_model=IngestionProbeResponse,
+    summary="NewsAPI 글로벌 뉴스 수집 진단",
+    description="NewsAPI를 호출해 종목 관련 글로벌 뉴스 또는 거시/섹터 뉴스 수집 결과를 반환합니다.",
+)
+def probe_newsapi(req: TickerIngestionRequest) -> IngestionProbeResponse:
+    """NewsAPI 기반 글로벌 뉴스 수집 상태를 확인한다."""
+    profile = providers.resolve_instrument(req.ticker_or_name)
+    rows = providers._fetch_news_newsapi(profile.ticker, max_items=req.max_items, include_content=False)
+    return IngestionProbeResponse(
+        source="newsapi_everything",
+        success=bool(rows),
+        as_of_utc=_now(),
+        item_count=len(rows),
+        details={"ticker": profile.ticker},
+        sample=[
+            {
+                "title": x["title"],
+                "url": x["url"],
+                "publish_time_utc": x["publish_time_utc"].isoformat(),
+            }
+            for x in rows[: min(5, len(rows))]
+        ],
+    )
+
+
+@router.post(
     "/ingestion/social/x/recent-search",
     response_model=IngestionProbeResponse,
     summary="X Recent Search 프로브",
@@ -251,6 +452,47 @@ def probe_x_recent_search(req: XRecentSearchRequest) -> IngestionProbeResponse:
             as_of_utc=_now(),
             details={"error_type": type(exc).__name__, "error": str(exc)[:300]},
         )
+
+
+@router.post(
+    "/ingestion/event-stream/official-calendar",
+    response_model=IngestionProbeResponse,
+    summary="공식 이벤트 캘린더 스트림 진단",
+    description="Fed, ECB, Eurostat, NBS 등 공식 기관의 캘린더 항목을 수집합니다.",
+)
+def probe_official_event_stream(req: TickerIngestionRequest) -> IngestionProbeResponse:
+    as_of_date = req.as_of_date or date.today()
+    rows = providers.fetch_official_event_stream(as_of_date, horizon_days=req.days)
+    return IngestionProbeResponse(
+        source="official_event_stream",
+        success=bool(rows),
+        as_of_utc=_now(),
+        item_count=len(rows),
+        details={"as_of_date": str(as_of_date), "horizon_days": req.days},
+        sample=rows[: min(5, len(rows))],
+    )
+
+
+@router.post(
+    "/ingestion/event-stream/broad-issue",
+    response_model=IngestionProbeResponse,
+    summary="광범위 이슈 스트림 진단",
+    description="GDELT와 공식 기관 발표문을 수집해 광범위 이슈 스트림을 구성합니다.",
+)
+def probe_broad_issue_stream(req: TickerIngestionRequest) -> IngestionProbeResponse:
+    as_of_date = req.as_of_date or date.today()
+    rows = providers.fetch_broad_issue_stream(as_of_date, lookback_days=req.days)
+    return IngestionProbeResponse(
+        source="broad_issue_stream",
+        success=bool(rows),
+        as_of_utc=_now(),
+        item_count=len(rows),
+        details={"as_of_date": str(as_of_date), "lookback_days": req.days},
+        sample=[
+            {"title": str(x.get("title") or ""), "url": str(x.get("url") or ""), "publish_time_utc": str(x.get("publish_time_utc") or "")}
+            for x in rows[: min(5, len(rows))]
+        ],
+    )
 
 
 @router.post(

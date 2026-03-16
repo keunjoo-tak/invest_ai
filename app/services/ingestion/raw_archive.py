@@ -32,7 +32,7 @@ class RawArchiveManager:
         """JSON 파일 저장."""
         path = root / rel_path
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
         return path
 
     def save_text(self, root: Path, rel_path: str, text: str) -> Path:

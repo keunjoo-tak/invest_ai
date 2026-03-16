@@ -1,8 +1,9 @@
-from fastapi import FastAPI
+﻿from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from app.api.routes.analysis import router as analysis_router
 from app.api.routes.batch_ingestion import router as batch_ingestion_router
+from app.api.routes.decision_products import router as decision_products_router
 from app.api.routes.health import router as health_router
 from app.api.routes.ingestion_pipeline import router as ingestion_pipeline_router
 from app.api.routes.internal import router as internal_router
@@ -13,6 +14,7 @@ from app.api.routes.web import router as web_router
 from app.core.config import get_settings
 from app.core.logging import configure_logging
 from app.db.base import Base
+from app.db.runtime_schema import ensure_runtime_schema
 from app.db.session import engine
 from app.workers.scheduler import build_scheduler
 
@@ -22,6 +24,7 @@ configure_logging()
 app = FastAPI(title=settings.app_name, version="0.3.0")
 app.include_router(health_router, prefix=settings.api_prefix)
 app.include_router(analysis_router, prefix=settings.api_prefix)
+app.include_router(decision_products_router, prefix=settings.api_prefix)
 app.include_router(internal_router, prefix=settings.api_prefix)
 app.include_router(stock_insight_router, prefix=settings.api_prefix)
 app.include_router(trade_compass_router, prefix=settings.api_prefix)
@@ -36,14 +39,15 @@ scheduler = build_scheduler()
 
 @app.on_event("startup")
 def on_startup() -> None:
-    """동작 설명은 인수인계 문서를 참고하세요."""
+    """애플리케이션 시작 시 스키마와 스케줄러를 초기화한다."""
     Base.metadata.create_all(bind=engine)
+    ensure_runtime_schema(engine)
     scheduler.start()
 
 
 @app.on_event("shutdown")
 def on_shutdown() -> None:
-    """동작 설명은 인수인계 문서를 참고하세요."""
+    """애플리케이션 종료 시 스케줄러를 정리한다."""
     scheduler.shutdown(wait=False)
 
 

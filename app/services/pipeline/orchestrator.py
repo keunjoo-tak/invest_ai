@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import uuid
 from datetime import date, datetime, timezone
@@ -12,10 +12,13 @@ from app.schemas.analysis import AlertPayload, AnalyzeTickerRequest, AnalyzeTick
 from app.services.alerts.dedup import build_reason_fingerprint, is_alert_blocked_by_cooldown
 from app.services.alerts.formatter import format_alert_message
 from app.services.alerts.telegram import TelegramNotifier
-from app.services.features.feature_builder import build_features
+from app.services.features.feature_builder import build_event_pattern_snapshot, build_features
+from app.services.ingestion.preprocessing import enrich_disclosure_records, enrich_macro_rows, enrich_news_records
 from app.services.ingestion.providers import SourceProviderClient
 from app.services.ingestion.raw_archive import RawArchiveManager
 from app.services.llm.gemini_client import GeminiClient
+from app.services.llm.task_runner import GeminiTaskRunner
+from app.services.localization.signal_localizer import localize_signal_result
 from app.services.quality.gates import passes_quality_gate
 from app.services.signal.scorer import evaluate_signal
 
@@ -27,6 +30,7 @@ class AnalysisPipeline:
         """동작 설명은 인수인계 문서를 참고하세요."""
         self.providers = SourceProviderClient()
         self.gemini = GeminiClient()
+        self.gemini_tasks = GeminiTaskRunner(self.gemini)
         self.telegram = TelegramNotifier()
         self.archive = RawArchiveManager()
 
@@ -86,13 +90,11 @@ class AnalysisPipeline:
         }
         existing_urls = {
             x[0]
-            for x in db.execute(select(NewsParsed.url).where(NewsParsed.instrument_id == instrument.id)).all()
+            for x in db.execute(select(NewsParsed.url)).all()
         }
         existing_disclosure_ids = {
             x[0]
-            for x in db.execute(
-                select(DisclosureParsed.source_disclosure_id).where(DisclosureParsed.instrument_id == instrument.id)
-            ).all()
+            for x in db.execute(select(DisclosureParsed.source_disclosure_id)).all()
         }
 
         for row in prices[-5:]:
@@ -151,12 +153,19 @@ class AnalysisPipeline:
             db.add(
                 MacroSnapshot(
                     as_of_date=row["as_of_date"],
+                    observation_date=row.get("observation_date"),
+                    release_at=row.get("release_at"),
+                    available_at=row.get("available_at"),
+                    ingested_at=row.get("ingested_at"),
+                    revision=str(row.get("revision") or "initial"),
+                    source_tz=str(row.get("source_tz") or "UTC"),
                     country=row["country"],
                     indicator_name=row["indicator_name"],
                     actual=row["actual"],
                     consensus=row["consensus"],
                     surprise_std=row["surprise_std"],
                     directional_interpretation=row["directional_interpretation"],
+                    source_meta_json=row.get("source_meta") or {},
                 )
             )
         db.flush()
@@ -167,11 +176,16 @@ class AnalysisPipeline:
         as_of_date = req.as_of_date or date.today()
         instrument = self._get_or_create_instrument(db, req.ticker_or_name)
         call_dir = self.archive.create_call_dir(channel="analyze_ticker", request_id=request_id)
+        quick_mode = req.analysis_mode == "quick"
+        event_pattern: dict[str, Any] = {}
 
         prices = self.providers.fetch_price_daily(instrument.ticker, as_of_date, req.lookback_days)
-        news = self.providers.fetch_news(instrument.ticker, as_of_date, include_content=True)
-        disclosures = self.providers.fetch_disclosures(instrument.ticker, as_of_date, include_content=True)
+        news = self.providers.fetch_news(instrument.ticker, as_of_date, include_content=not quick_mode)
+        disclosures = self.providers.fetch_disclosures(instrument.ticker, as_of_date, include_content=not quick_mode)
+        financials = self.providers.fetch_financial_statements(instrument.ticker, as_of_date)
         macro_rows = self.providers.fetch_macro(as_of_date)
+        sector_momentum = self.providers.fetch_sector_momentum(instrument.ticker, as_of_date, min(req.lookback_days, 120))
+        overnight_transmission = self.providers.fetch_us_overnight_transmission(instrument.ticker, as_of_date, min(req.lookback_days, 240))
         self.archive.save_json(
             call_dir,
             "snapshots/market_snapshot.json",
@@ -182,12 +196,38 @@ class AnalysisPipeline:
                 "prices_count": len(prices),
                 "news_count": len(news),
                 "disclosures_count": len(disclosures),
+                "financial_statement_available": bool(financials),
                 "macro_count": len(macro_rows),
+                "sector_momentum": sector_momentum,
+                "overnight_transmission": overnight_transmission,
+                "event_pattern": event_pattern,
             },
         )
 
+        if financials:
+            self.archive.save_json(call_dir, "snapshots/financial_statement.json", financials)
+
         doc_inputs: list[dict[str, Any]] = []
+        if financials:
+            doc_inputs.append(
+                {
+                    "source": "financial_statement",
+                    "title": f"{instrument.name_kr} OpenDART Financial Statement",
+                    "content_text": str(financials.get("summary_text") or ""),
+                    "url": f"https://dart.fss.or.kr/dsaf001/main.do?rcpNo={financials.get('rcept_no', '')}",
+                }
+            )
         for idx, row in enumerate(news):
+            if quick_mode:
+                doc_inputs.append(
+                    {
+                        "source": "news",
+                        "title": row.get("title", ""),
+                        "content_text": row.get("content_text", ""),
+                        "url": row.get("url", ""),
+                    }
+                )
+                continue
             saved = self.archive.save_document(
                 root=call_dir,
                 source="news",
@@ -214,6 +254,16 @@ class AnalysisPipeline:
             )
 
         for idx, row in enumerate(disclosures):
+            if quick_mode:
+                doc_inputs.append(
+                    {
+                        "source": "disclosure",
+                        "title": row.get("title", ""),
+                        "content_text": row.get("content_text", ""),
+                        "url": row.get("url", ""),
+                    }
+                )
+                continue
             saved = self.archive.save_document(
                 root=call_dir,
                 source="disclosures",
@@ -239,7 +289,40 @@ class AnalysisPipeline:
                 }
             )
 
-        doc_summaries = self.gemini.summarize_documents(doc_inputs)
+        disclosure_inputs = [
+            {
+                "source": "disclosure",
+                "title": row.get("title", ""),
+                "content_text": row.get("content_text", ""),
+                "url": row.get("url", ""),
+            }
+            for row in disclosures[:6]
+        ]
+
+        if quick_mode:
+            doc_summaries = [
+                {
+                    "source": item.get("source", "document"),
+                    "title": item.get("title", ""),
+                    "summary": str(item.get("content_text") or item.get("title") or "")[:240],
+                    "url": item.get("url", ""),
+                }
+                for item in doc_inputs[:8]
+            ]
+            llm_signals = []
+            disclosure_stage = await self.gemini_tasks.run_disclosure_scoring_stage(disclosure_inputs)
+            llm_stage = {
+                "meta": {
+                    "summaries": {"status": "skipped", "reason": "quick_mode", "label": "document_summaries"},
+                    "signals": {"status": "skipped", "reason": "quick_mode", "label": "prediction_signals"},
+                    "disclosure_scoring": disclosure_stage["meta"],
+                }
+            }
+        else:
+            llm_stage = await self.gemini_tasks.run_document_stage(doc_inputs)
+            doc_summaries = llm_stage["summaries"]
+            llm_signals = llm_stage["signals"]
+            disclosure_stage = await self.gemini_tasks.run_disclosure_scoring_stage(disclosure_inputs)
         for item in doc_summaries:
             title = str(item.get("title") or "")
             summary = str(item.get("summary") or "")
@@ -249,26 +332,84 @@ class AnalysisPipeline:
             for row in disclosures:
                 if str(row.get("title") or "") == title:
                     row["doc_summary"] = summary
+        news = enrich_news_records(news, llm_signals)
+        disclosure_scores = disclosure_stage["scores"]
+        disclosures = enrich_disclosure_records(disclosures, llm_signals, disclosure_scores)
+        macro_rows = enrich_macro_rows(macro_rows, llm_signals)
         self.archive.save_json(
             call_dir,
             "snapshots/document_summaries.json",
-            {"request_id": request_id, "items": doc_summaries},
+            {"request_id": request_id, "items": doc_summaries, "prediction_signals": llm_signals, "material_disclosure_scores": disclosure_scores},
         )
         self._persist_collected_data(db, instrument, prices, news, disclosures, macro_rows)
 
-        features = build_features(as_of_date, prices, news, disclosures, macro_rows)
+        event_pattern = build_event_pattern_snapshot(as_of_date, prices, news, disclosures)
+        self.archive.save_json(
+            call_dir,
+            "snapshots/market_snapshot.json",
+            {
+                "request_id": request_id,
+                "ticker": instrument.ticker,
+                "as_of_date": str(as_of_date),
+                "prices_count": len(prices),
+                "news_count": len(news),
+                "disclosures_count": len(disclosures),
+                "financial_statement_available": bool(financials),
+                "macro_count": len(macro_rows),
+                "sector_momentum": sector_momentum,
+                "overnight_transmission": overnight_transmission,
+                "event_pattern": event_pattern,
+            },
+        )
+        features = build_features(
+            as_of_date,
+            prices,
+            news,
+            disclosures,
+            macro_rows,
+            financials=financials,
+            sector_momentum=sector_momentum,
+            overnight_transmission=overnight_transmission,
+            event_pattern=event_pattern,
+        )
         signal = evaluate_signal(features)
         pass_quality, quality_failures = passes_quality_gate(features, signal)
         if not pass_quality:
             signal.risk_flags.extend(quality_failures)
 
-        explanation = self.gemini.explain_signal(
-            ticker=instrument.ticker,
-            signal=signal.model_dump(),
-            features=features.model_dump(mode="json"),
-        )
-        explanation["document_summaries"] = doc_summaries[:8]
-        explanation["archive_call_dir"] = str(call_dir)
+        if quick_mode:
+            explanation_stage = {"meta": {"status": "skipped", "reason": "quick_mode", "label": "signal_explanation"}}
+            explanation = {
+                "summary": f"{instrument.name_kr} 종목에 대한 핵심 분석 결과를 빠르게 정리했습니다.",
+                "highlights": [
+                    f"시그널 점수 {signal.score}",
+                    f"품질 점수 {signal.quality_score}",
+                    f"문서 근거 {len(doc_summaries[:8])}건 반영",
+                ],
+                "document_summaries": doc_summaries[:8],
+                "material_disclosures": disclosure_scores[:5],
+                "financial_statement": {k: v for k, v in financials.items() if k != "raw_rows"} if financials else {},
+                "sector_momentum": sector_momentum,
+                "overnight_transmission": overnight_transmission,
+                "event_pattern": event_pattern,
+                "llm_status": {"document_stage": llm_stage["meta"], "explanation_stage": explanation_stage["meta"]},
+                "archive_call_dir": str(call_dir),
+            }
+        else:
+            explanation_stage = await self.gemini_tasks.run_explanation_stage(
+                ticker=instrument.ticker,
+                signal=signal.model_dump(),
+                features=features.model_dump(mode="json"),
+            )
+            explanation = explanation_stage["explanation"]
+            explanation["document_summaries"] = doc_summaries[:8]
+            explanation["material_disclosures"] = disclosure_scores[:5]
+            explanation["financial_statement"] = {k: v for k, v in financials.items() if k != "raw_rows"} if financials else {}
+            explanation["sector_momentum"] = sector_momentum
+            explanation["overnight_transmission"] = overnight_transmission
+            explanation["event_pattern"] = event_pattern
+            explanation["llm_status"] = {"document_stage": llm_stage["meta"], "explanation_stage": explanation_stage["meta"]}
+            explanation["archive_call_dir"] = str(call_dir)
 
         db.add(
             SignalDecision(
@@ -319,8 +460,14 @@ class AnalysisPipeline:
             )
 
         response_language = req.response_language or "ko"
-        if response_language == "ko":
-            explanation = self.gemini.translate_json_to_korean(explanation)
+        if response_language == "ko" and not quick_mode:
+            translation_stage = await self.gemini_tasks.run_translation_stage(explanation)
+            explanation = translation_stage["payload"]
+            explanation["llm_status"]["translation_stage"] = translation_stage["meta"]
+        elif response_language == "ko":
+            explanation.setdefault("llm_status", {})["translation_stage"] = {"status": "skipped", "reason": "quick_mode", "label": "json_translation"}
+
+        localized_signal = localize_signal_result(signal, response_language)
 
         db.commit()
         return AnalyzeTickerResponse(
@@ -331,7 +478,7 @@ class AnalysisPipeline:
             generated_at_utc=datetime.now(timezone.utc),
             response_language=response_language,
             features=features,
-            signal=signal,
+            signal=localized_signal,
             explanation=explanation,
             alert=AlertPayload(
                 should_send=should_send,

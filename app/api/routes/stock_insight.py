@@ -7,20 +7,19 @@ from fastapi import APIRouter, Query
 from app.schemas.intelligence import StockInsightResponse
 from app.services.intelligence.stock_insight import StockInsightEngine
 
-router = APIRouter(prefix="/stock-insight", tags=["stock-insight"])
+router = APIRouter(prefix='/stock-insight', tags=['legacy-products'])
 engine = StockInsightEngine()
 
 
 @router.get(
-    "/{ticker_or_name}",
+    '/{ticker_or_name}',
     response_model=StockInsightResponse,
-    summary="Stock Insight 종목 분석",
-    description="종목 상태, 이벤트, 기술/수급/리스크 요인을 통합 분석해 종목 인사이트를 반환합니다.",
+    summary='Legacy Stock Insight view',
+    description='Deprecated. Use GET /api/v1/stock-decision/{ticker_or_name} for the current decision-centric product.',
+    deprecated=True,
 )
 def get_stock_insight(
     ticker_or_name: str,
-    as_of_date: date | None = Query(default=None, description="기준일(미입력 시 오늘)"),
+    as_of_date: date | None = Query(default=None, description='Analysis date'),
 ) -> StockInsightResponse:
-    """종목 인사이트 조회."""
     return engine.analyze(ticker_or_name=ticker_or_name, as_of_date=as_of_date)
-
