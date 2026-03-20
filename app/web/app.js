@@ -18,18 +18,201 @@ const SOURCE_LABELS = {
   derived_from_stock_decision: '종목 판단 기반',
 };
 
-const REPORT_TARGETS = {
-  market: '#report-market',
-  stock: '#report-stock',
-  action: '#report-action',
-  watch: '#report-watch',
+const SERVICE_META = {
+  market: {
+    label: 'Market Regime',
+    kicker: '시장 체제',
+    title: '오늘의 시장 체제와 자금 흐름을 먼저 확인합니다.',
+    description: '전용 리포트 영역에서 체제, 섹터 강약, 헤드라인, 핵심 동인을 한 번에 읽을 수 있게 구성한 영역입니다.',
+  },
+  stock: {
+    label: 'Stock Decision',
+    kicker: '종목 판단',
+    title: '개별 종목 판단 리포트를 근거 중심으로 확인합니다.',
+    description: '시세, 이벤트, 공시, 재무, 섹터, 거시 신호를 한 문서 뷰에 통합한 리포트입니다.',
+  },
+  action: {
+    label: 'Action Planner',
+    kicker: '실행 계획',
+    title: '판단 결과를 구체적인 행동 계획으로 전환합니다.',
+    description: '진입 구간, 무효화 구간, 시나리오별 대응, 실행 우선순위를 투자 기간과 위험 성향에 맞춰 정리합니다.',
+  },
+  watch: {
+    label: 'Watchlist Alerts',
+    kicker: '관찰 알림',
+    title: '현재 시점에서 즉시 대응 필요 여부를 점검합니다.',
+    description: '알림 점검과 저장형 워치리스트 관리를 함께 수행하는 작업 영역입니다.',
+  },
+};
+
+const uiState = {
+  activeService: 'market',
+  reportHtmlByService: {},
+  statusByService: {},
+  runHistory: [],
+  loadingState: null,
 };
 
 const headlineBriefStore = new Map();
 
+const LOADING_FLOW_CONFIG = {
+  market: {
+    badge: '시장 체제 계산 중',
+    headline: '시장 체제 리포트를 생성하고 있습니다.',
+    summary: '거시, 섹터, 헤드라인, 리서치 흐름을 차례대로 정리하는 중입니다.',
+    stageDurationMs: 1800,
+    stages: [
+      { title: '기준 시점 확인', description: '기준 시점과 사용 가능한 배치 스냅샷 여부를 먼저 확인합니다.' },
+      { title: '거시 및 시장 데이터 수집', description: '국내외 거시 지표와 시장 관련 문서를 정리합니다.' },
+      { title: '섹터 강약 계산', description: '강세 섹터, 약세 섹터, 대표 종목 흐름을 계산합니다.' },
+      { title: '헤드라인 및 리서치 요약', description: '최근 헤드라인과 공개 리서치 문서 요약을 통합합니다.' },
+      { title: '최종 리포트 구성', description: '상단 결론과 세부 근거 영역을 리포트 형식으로 정리합니다.' },
+    ],
+  },
+  stock: {
+    badge: '종목 판단 생성 중',
+    headline: '종목 판단 리포트를 생성하고 있습니다.',
+    summary: '종목 식별, 시세 수집, 이벤트·공시 해석, 섹터·거시·리서치 근거를 순서대로 정리하는 중입니다.',
+    stageDurationMs: 2000,
+    stages: [
+      { title: '종목 식별 및 분석 범위 설정', description: '입력된 종목명 또는 티커를 식별하고 조회 범위를 설정합니다.' },
+      { title: '시세·뉴스·공시·재무 데이터 수집', description: '가격 흐름, 관련 뉴스, 공시, 재무제표를 가져옵니다.' },
+      { title: '이벤트·공시·섹터 특징 계산', description: '이벤트 타임라인, 공시 점수, 섹터 모멘텀과 자금 흐름을 계산합니다.' },
+      { title: '시그널 점수 및 근거 조합', description: '상승·하락 요인, 리스크 플래그, 거시·정책 근거를 조합합니다.' },
+      { title: '종목 판단 리포트 정리', description: '최종 결론, 기간별 해석, 근거 섹션을 리포트로 정리합니다.' },
+    ],
+  },
+  action: {
+    badge: '행동 계획 생성 중',
+    headline: '행동 계획 리포트를 생성하고 있습니다.',
+    summary: '종목 판단을 먼저 불러오고, 투자 기간과 위험 성향에 맞는 실행 계획으로 변환하는 중입니다.',
+    stageDurationMs: 2000,
+    stages: [
+      { title: '종목 판단 서비스 호출', description: '입력한 종목의 최신 판단 리포트를 먼저 불러옵니다.' },
+      { title: '시장·섹터·이벤트 상태 재확인', description: '실행 계획에 영향을 주는 상위 맥락을 다시 점검합니다.' },
+      { title: '가격 구간 및 시나리오 계산', description: '매수 관심 구간, 무효화 구간, 목표 구간과 시나리오를 계산합니다.' },
+      { title: '보유 여부·위험 성향 반영', description: '보유 상태, 평균 매입가, 위험 성향에 맞춰 계획을 조정합니다.' },
+      { title: '행동 계획 리포트 정리', description: '체크리스트와 원문 출처를 포함한 실행 계획을 정리합니다.' },
+    ],
+  },
+  watch: {
+    badge: '관찰 알림 점검 중',
+    headline: '관찰 알림 리포트를 생성하고 있습니다.',
+    summary: '현재 시점의 이벤트와 리스크를 다시 점검해 알림 필요성을 정리하는 중입니다.',
+    stageDurationMs: 1600,
+    stages: [
+      { title: '관찰 대상 확인', description: '입력된 종목을 확인하고 점검 범위를 정합니다.' },
+      { title: '실시간 이벤트 및 시그널 점검', description: '뉴스, 공시, 가격 흐름을 결합해 즉시 점검 여부를 계산합니다.' },
+      { title: '알림 문구 및 근거 정리', description: '트리거, 리스크, 근거 문서를 알림 형식으로 정리합니다.' },
+    ],
+  },
+};
+
+function stopLoadingState(service = null) {
+  const current = uiState.loadingState;
+  if (!current) return;
+  if (service && current.service !== service) return;
+  if (current.timerId) {
+    window.clearInterval(current.timerId);
+  }
+  uiState.loadingState = null;
+}
+
+function getLoadingSnapshot(service, startedAt) {
+  const config = LOADING_FLOW_CONFIG[service] || LOADING_FLOW_CONFIG.market;
+  const elapsedMs = Math.max(0, Date.now() - startedAt);
+  const stageDurationMs = config.stageDurationMs || 1800;
+  const stageIndex = Math.min(config.stages.length - 1, Math.floor(elapsedMs / stageDurationMs));
+  const progress = Math.min(94, Math.round(12 + elapsedMs / 220));
+  return {
+    config,
+    elapsedMs,
+    stageIndex,
+    progress,
+    activeStage: config.stages[stageIndex],
+  };
+}
+
+function renderLoadingReport(service, startedAt) {
+  const { config, elapsedMs, stageIndex, progress, activeStage } = getLoadingSnapshot(service, startedAt);
+  const stagesHtml = config.stages
+    .map((stage, index) => {
+      const stateClass = index < stageIndex ? 'is-done' : index === stageIndex ? 'is-active' : 'is-pending';
+      const stateLabel = index < stageIndex ? '완료' : index === stageIndex ? '진행 중' : '대기';
+      return `
+        <article class="process-stage ${stateClass}">
+          <div class="process-stage-index">${index + 1}</div>
+          <div class="process-stage-body">
+            <div class="process-stage-head">
+              <strong>${escapeHtml(stage.title)}</strong>
+              <span>${stateLabel}</span>
+            </div>
+            <p>${escapeHtml(stage.description)}</p>
+          </div>
+        </article>`;
+    })
+    .join('');
+
+  return reportShell({
+    badges: [config.badge, `진행률 ${progress}%`],
+    title: config.headline,
+    summary: config.summary,
+    body: `
+      <div class="process-grid">
+        <section class="report-section process-hero-card">
+          <div class="process-hero-head">
+            <div class="process-pulse-dot"></div>
+            <div>
+              <p class="process-current-label">현재 단계</p>
+              <h4>${escapeHtml(activeStage.title)}</h4>
+              <p class="section-copy">${escapeHtml(activeStage.description)}</p>
+            </div>
+          </div>
+          <div class="process-progress-track">
+            <div class="process-progress-fill" style="width:${progress}%"></div>
+          </div>
+          <div class="process-progress-meta">
+            <span>진행률 ${progress}%</span>
+            <span>경과 시간 ${Math.max(1, Math.round(elapsedMs / 1000))}초</span>
+          </div>
+        </section>
+        <section class="report-section">
+          <h4>백그라운드 처리 흐름</h4>
+          <div class="process-stage-list">${stagesHtml}</div>
+        </section>
+        <section class="report-section">
+          <h4>안내</h4>
+          <ul class="report-list process-note-list">
+            <li>현재 화면은 실제 백엔드 처리 순서를 간략한 구조로 보여줍니다.</li>
+            <li>응답이 완료되면 로딩 화면은 즉시 최종 리포트로 바뀝니다.</li>
+            <li>외부 데이터 응답 속도에 따라 단계별 머무는 시간은 달라질 수 있습니다.</li>
+          </ul>
+        </section>
+      </div>`,
+  });
+}
+
+function startLoadingState(service) {
+  stopLoadingState();
+  const state = {
+    service,
+    startedAt: Date.now(),
+    timerId: null,
+  };
+  uiState.loadingState = state;
+  const paint = () => {
+    if (!uiState.loadingState || uiState.loadingState !== state) return;
+    if (uiState.activeService !== service) return;
+    showReport(renderLoadingReport(service, state.startedAt));
+  };
+  paint();
+  state.timerId = window.setInterval(paint, 900);
+}
+
 async function request(method, url, body) {
   const response = await fetch(url, {
     method,
+    credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
     body: body ? JSON.stringify(body) : undefined,
   });
@@ -41,13 +224,56 @@ async function request(method, url, body) {
     data = { raw: text };
   }
   if (!response.ok) {
-    throw new Error(`${response.status} ${response.statusText}\n${JSON.stringify(data, null, 2)}`);
+    if (response.status === 401) {
+      window.location.href = '/app/login';
+    }
+    throw new Error(`${response.status} ${response.statusText}
+${JSON.stringify(data, null, 2)}`);
   }
   return data;
 }
 
+async function refreshAuthUser() {
+  const target = qs('#auth-username');
+  if (!target) return;
+  try {
+    const data = await request('GET', '/api/v1/auth/me');
+    target.textContent = `${data.username || '사용자'} 로그인 상태`;
+  } catch {
+    target.textContent = '로그인 정보 없음';
+  }
+}
+
+async function logoutSession() {
+  try {
+    await request('POST', '/api/v1/auth/logout');
+  } finally {
+    window.location.href = '/app/login';
+  }
+}
+
+function repairVisibleText(value) {
+  let text = String(value ?? '');
+  const replacements = [
+    ['??? ID', '소스 ID'],
+    ['??? ?????? ???', '소스 미리보기 실행'],
+    ['????????????? ???????????', '워치리스트 저장이 완료되었습니다.'],
+    ['??????????? ??????...', '배치를 실행하는 중입니다...'],
+    ['??? 5???????? ??? ?????? ??? ??????.', '최근 5일 헤드라인 배치 데이터가 아직 없습니다.'],
+    ['??? 5????????????? ???', '최근 5일 섹션별 헤드라인 영향'],
+    ['???????? ??? ?????', '리서치 기반 해석 사인'],
+    ['???????? ???', '리서치 체제 해석'],
+    ['???????? ???', '섹션별 영향 요약'],
+    ['?????? ??? ???', '헤드라인 통합 해석'],
+  ];
+  for (const [bad, good] of replacements) {
+    text = text.split(bad).join(good);
+  }
+  return text;
+}
+
 function escapeHtml(value) {
-  return String(value ?? '')
+  return repairVisibleText(String(value ?? ''))
     .replaceAll('&', '&amp;')
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;')
@@ -55,8 +281,26 @@ function escapeHtml(value) {
     .replaceAll("'", '&#39;');
 }
 
+function repairRenderedText(root) {
+  if (!root) return;
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let node = walker.nextNode();
+  while (node) {
+    node.nodeValue = repairVisibleText(node.nodeValue);
+    node = walker.nextNode();
+  }
+  root.querySelectorAll('[title],[aria-label],[placeholder]').forEach((element) => {
+    for (const attr of ['title', 'aria-label', 'placeholder']) {
+      const value = element.getAttribute(attr);
+      if (value) {
+        element.setAttribute(attr, repairVisibleText(value));
+      }
+    }
+  });
+}
+
 function formatError(err) {
-  return err instanceof Error ? err.message : String(err);
+  return repairVisibleText(err instanceof Error ? err.message : String(err));
 }
 
 function formatDate(value) {
@@ -79,26 +323,110 @@ function sourceLabel(code) {
   return SOURCE_LABELS[code] || code || '실시간 계산';
 }
 
-function mountReport(key, html) {
-  const target = qs(REPORT_TARGETS[key]);
-  if (target) {
-    target.classList.remove('report-empty');
-    target.innerHTML = html;
+function metaFor(service) {
+  return SERVICE_META[service] || SERVICE_META.market;
+}
+
+function renderWorkspaceSummary(service = uiState.activeService) {
+  const meta = metaFor(service);
+  const status = uiState.statusByService[service] || {};
+  qs('#workspace-kicker').textContent = meta.kicker;
+  qs('#workspace-title').textContent = meta.title;
+  qs('#workspace-copy').textContent = meta.description;
+  qs('#workspace-status').innerHTML = renderStatus(status);
+}
+
+function renderRunHistory() {
+  const target = qs('#run-history');
+  if (!target) return;
+  if (!uiState.runHistory.length) {
+    target.innerHTML = '<p class="run-history-empty">아직 실행 이력이 없습니다. 좌측 컨트롤 레일에서 첫 리포트를 실행해 보세요.</p>';
+    return;
+  }
+  target.innerHTML = uiState.runHistory
+    .map(
+      (item, index) => `
+      <button class="run-history-item" type="button" data-history-index="${index}">
+        <strong>${escapeHtml(item.title)}</strong>
+        <span>${escapeHtml(item.serviceLabel)} - ${escapeHtml(item.when)}</span>
+      </button>`
+    )
+    .join('');
+}
+
+function recordRun(service, title, data, html) {
+  const entry = {
+    service,
+    serviceLabel: metaFor(service).label,
+    title,
+    when: formatDate(new Date().toISOString()),
+    status: extractServiceStatus(data),
+    html,
+  };
+  uiState.runHistory = [entry, ...uiState.runHistory.filter((item) => !(item.service === service && item.title === title))].slice(0, 10);
+  renderRunHistory();
+}
+
+function showLanding() {
+  qs('#workspace-landing').classList.remove('hidden');
+  qs('#report-stage').classList.add('hidden');
+  qs('#report-stage').innerHTML = '';
+}
+
+function focusReportStage() {
+  const stage = qs('#report-stage');
+  if (!stage || window.innerWidth > 768) return;
+  window.requestAnimationFrame(() => {
+    stage.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+}
+
+function showReport(html) {
+  qs('#workspace-landing').classList.add('hidden');
+  const stage = qs('#report-stage');
+  stage.classList.remove('hidden');
+  stage.innerHTML = repairVisibleText(html);
+  repairRenderedText(stage);
+}
+
+function setActiveService(service, options = {}) {
+  uiState.activeService = service;
+  [...document.querySelectorAll('.service-tab')].forEach((button) => {
+    button.classList.toggle('is-active', button.dataset.service === service);
+  });
+  renderWorkspaceSummary(service);
+  renderControlPanel(service, options.panelMode || 'default');
+  if (options.showLanding) {
+    showLanding();
+    return;
+  }
+  const cachedHtml = uiState.reportHtmlByService[service];
+  if (cachedHtml) {
+    showReport(cachedHtml);
+  } else {
+    showLanding();
   }
 }
 
+function mountReport(key, html) {
+  stopLoadingState(key);
+  uiState.reportHtmlByService[key] = html;
+  setActiveService(key);
+  showReport(html);
+  focusReportStage();
+}
+
 function mountLoading(key) {
-  mountReport(
-    key,
-    `<div class="report-shell"><div class="report-top"><div class="report-badge-row"><span class="report-badge">생성 중</span></div><h4 class="report-headline">${T.loading}</h4><p class="report-summary">외부 데이터와 내부 판단 로직을 결합해 리포트를 구성하고 있습니다.</p></div></div>`
-  );
+  setActiveService(key);
+  startLoadingState(key);
+  focusReportStage();
 }
 
 function mountError(key, err) {
-  mountReport(
-    key,
-    `<div class="report-shell"><div class="report-top"><div class="report-badge-row"><span class="report-badge">오류</span></div><h4 class="report-headline">리포트 생성에 실패했습니다.</h4><p class="report-summary">${escapeHtml(formatError(err))}</p></div></div>`
-  );
+  stopLoadingState(key);
+  setActiveService(key);
+  showReport(`<div class="report-shell"><div class="report-top"><div class="report-badge-row"><span class="report-badge">오류</span></div><h4 class="report-headline">요청 처리 중 문제가 발생했습니다.</h4><p class="report-summary">${escapeHtml(formatError(err))}</p></div></div>`);
+  focusReportStage();
 }
 
 function renderStatus(status) {
@@ -175,19 +503,20 @@ function renderSignalChips(items) {
 
 function renderTimeline(items) {
   if (!items || items.length === 0) {
-    return '<p class="section-copy">최근 이벤트가 없습니다.</p>';
+    return '<p class="section-copy">표시할 이벤트 타임라인이 없습니다.</p>';
   }
   return `<div class="timeline-grid">${items
     .map(
       (item) => `
       <article class="timeline-card">
         <div class="timeline-meta">
-          <span class="timeline-chip">${escapeHtml(item.source || '문서')}</span>
+          <span class="timeline-chip">${escapeHtml(item.source || '출처 없음')}</span>
           <span class="timeline-chip">${escapeHtml(item.event_type || '이벤트')}</span>
         </div>
         <h5>${escapeHtml(item.title || '')}</h5>
         <p>${escapeHtml(item.summary || '')}</p>
         <p class="timeline-date">${escapeHtml(formatDate(item.published_at))}</p>
+        ${renderSourceActions(item)}
       </article>`
     )
     .join('')}</div>`;
@@ -214,7 +543,7 @@ function renderPeerTable(items) {
             .map(
               (item) => `
               <tr>
-                <td>${escapeHtml(item.role === 'leader' ? '대장주' : item.role === 'target' ? '입력 종목' : 'peer')}</td>
+                <td>${escapeHtml(item.role === 'leader' ? '대장주' : item.role === 'target' ? '입력 종목' : '동일 섹터')}</td>
                 <td>${escapeHtml(`${item.name || item.ticker} (${item.ticker})`)}</td>
                 <td>${(Number(item.return_20d || 0) * 100).toFixed(1)}%</td>
                 <td>${Number(item.rel_volume || 0).toFixed(2)}</td>
@@ -229,7 +558,7 @@ function renderPeerTable(items) {
 
 function renderDisclosureCards(items) {
   if (!items || items.length === 0) {
-    return '<p class="section-copy">즉시 반영할 수시공시 점수 데이터가 없습니다.</p>';
+    return '<p class="section-copy">표시할 공시 점수화 결과가 없습니다.</p>';
   }
   return `<div class="timeline-grid">${items
     .map(
@@ -242,6 +571,7 @@ function renderDisclosureCards(items) {
         <h5>${escapeHtml(item.title || '')}</h5>
         <p>호재 ${Number(item.bullish_score || 0).toFixed(2)} / 악재 ${Number(item.bearish_score || 0).toFixed(2)} / 중요도 ${Number(item.event_severity || 0).toFixed(2)}</p>
         <p>${escapeHtml(item.rationale || '')}</p>
+        ${renderSourceActions(item)}
       </article>`
     )
     .join('')}</div>`;
@@ -249,7 +579,7 @@ function renderDisclosureCards(items) {
 
 function renderEventPattern(info, features) {
   if (!info || Object.keys(info).length === 0) {
-    return '<p class="section-copy">이벤트 패턴 매칭 데이터가 없습니다.</p>';
+    return '<p class="section-copy">표시할 이벤트 패턴 데이터가 없습니다.</p>';
   }
   const caution = !!info.volatility_caution_mode;
   return `<div>
@@ -261,7 +591,7 @@ function renderEventPattern(info, features) {
       { label: '패턴 신뢰도', value: Number(features.event_pattern_confidence || 0).toFixed(2) },
       { label: '변동성 주의 점수', value: Number(features.event_volatility_score || 0).toFixed(2) },
     ])}
-    <p class="section-copy">${caution ? '이벤트 당일 또는 직후로 판단되어 일반 예측보다 변동성 관리와 장중 확인을 우선합니다.' : '과거 유사 이벤트 패턴을 참고하되 일반 분석 로직을 함께 사용합니다.'}</p>
+    <p class="section-copy">${caution ? '이벤트 당일 또는 직후에는 일반 추세 판단보다 변동성 관리와 추가 확인을 우선합니다.' : '과거 유사 이벤트 패턴을 참고하되 일반 분석 로직과 함께 해석합니다.'}</p>
   </div>`;
 }
 
@@ -273,7 +603,7 @@ function renderOvernightTransmission(info, features) {
     { label: '참조 지수', value: `${info.reference_label || info.reference_index} (${info.latest_us_trade_date || '-'})` },
     { label: '미국 전일 수익률', value: `${(Number(info.latest_us_return || 0) * 100).toFixed(2)}%` },
     { label: '전이 베타 / 상관', value: `${Number(features.overnight_us_beta || 0).toFixed(2)} / ${Number(features.overnight_us_correlation || 0).toFixed(2)}` },
-    { label: '예상 갭 영향', value: `${(Number(features.overnight_us_signal || 0) * 100).toFixed(2)}%p` },
+    { label: '예상 영향', value: `${(Number(features.overnight_us_signal || 0) * 100).toFixed(2)}%p` },
   ])}</div>`;
 }
 
@@ -306,6 +636,54 @@ function formatInstrumentLabel(row) {
     return `${name}(${ticker})`;
   }
   return ticker || name || '-';
+}
+
+function buildDocumentUrlMap(analysis) {
+  const docs = analysis?.explanation?.document_summaries || [];
+  const urlMap = new Map();
+  docs.forEach((item) => {
+    const title = String(item?.title || '').trim();
+    const url = String(item?.url || '').trim();
+    if (title && url && !urlMap.has(title)) {
+      urlMap.set(title, url);
+    }
+  });
+  return urlMap;
+}
+
+function attachTimelineLinks(items, analysis) {
+  const urlMap = buildDocumentUrlMap(analysis);
+  return (items || []).map((item) => ({
+    ...item,
+    url: String(item?.url || urlMap.get(String(item?.title || '').trim()) || ''),
+  }));
+}
+
+function attachDocumentLinks(items, analysis) {
+  const urlMap = buildDocumentUrlMap(analysis);
+  return (items || []).map((item) => ({
+    ...item,
+    url: String(item?.url || urlMap.get(String(item?.title || '').trim()) || ''),
+  }));
+}
+
+function buildAnalysisEvidenceItems(analysis) {
+  return (analysis?.explanation?.document_summaries || []).map((item) => ({
+    source: String(item?.source || item?.category || '\uBB38\uC11C'),
+    event_type: String(item?.event_type || item?.source || '\uADFC\uAC70 \uBB38\uC11C'),
+    published_at: item?.published_at || item?.publish_time_utc || item?.date || '',
+    title: item?.title || '',
+    summary: item?.summary || '',
+    url: item?.url || '',
+  }));
+}
+
+function renderSourceActions(item) {
+  const actions = [];
+  if (item?.url) {
+    actions.push(`<a class="btn tertiary btn-inline" href="${escapeHtml(item.url)}" target="_blank" rel="noreferrer">\uCD9C\uCC98 \uC5F4\uAE30</a>`);
+  }
+  return actions.length ? `<div class="card-action-row">${actions.join('')}</div>` : '';
 }
 
 function getRiskFlagCodes(signal) {
@@ -401,11 +779,11 @@ function sectorLogicBadges(sector) {
     '2차전지·화학': ['정책 수혜형', '원자재 민감형'],
     '바이오': ['정책/규제 민감형', '성장주 민감형'],
     '자동차': ['수출/환율 민감형', '경기 민감형'],
-    '조선': ['글로벌 사이클형', '후행 수주형'],
+    '조선': ['글로벌 사이클형', '수주 민감형'],
     '철강': ['원자재 민감형', '경기 민감형'],
     '건설': ['금리 민감형', '정책 수혜형'],
     '전력·에너지': ['원자재 민감형', '방어형'],
-    '증권': ['금리 민감형', '시장 회전율 민감형'],
+    '증권': ['금리 민감형', '시장 회전형'],
   };
   return mapping[String(sector || '')] || ['시장 민감형'];
 }
@@ -582,6 +960,68 @@ function renderHeadlineImpactGrid(items) {
   }).join('')}</div>`;
 }
 
+function researchReportTypeLabel(value) {
+  const map = {
+    morning_outlook: '장전 시황',
+    close_outlook: '장마감 시황',
+    daily_strategy: '데일리 전략',
+    weekly_strategy: '주간 전략',
+    monthly_strategy: '월간 전략',
+    macro: '거시 분석',
+    sector_report: '산업 분석',
+    company_report: '기업 분석',
+    policy_brief: '정책 브리프',
+    theme_report: '테마 분석',
+    rates: '금리',
+    fx: '환율',
+    credit: '크레딧',
+  };
+  return map[String(value || '')] || String(value || '리서치 문서');
+}
+
+function researchStanceLabel(value) {
+  return {
+    positive: '우호적',
+    negative: '보수적',
+    neutral: '중립',
+  }[String(value || '')] || '중립';
+}
+
+function renderResearchBriefGrid(items) {
+  if (!items || items.length === 0) {
+    return '<p class="section-copy">반영된 리서치 문서가 없습니다.</p>';
+  }
+  return `<div class="driver-grid">${items.map((item) => `
+    <article class="timeline-card">
+      <div class="timeline-meta">
+        <span class="timeline-chip">${escapeHtml(item.house_name || '-')}</span>
+        <span class="timeline-chip">${escapeHtml(researchReportTypeLabel(item.report_type))}</span>
+        <span class="timeline-chip">${escapeHtml(researchStanceLabel(item.stance))}</span>
+      </div>
+      <h5>${escapeHtml(item.summary || '')}</h5>
+      <p class="data-footnote">기여도 ${Number(item.contribution_score || 0).toFixed(2)} / 가중치 ${Number(item.weight || 0).toFixed(2)} / 발행 ${escapeHtml(formatKstDateTime(item.published_at_utc))}</p>
+      ${item.url ? `<a class="btn tertiary" href="${escapeHtml(item.url)}" target="_blank" rel="noreferrer">출처 열기</a>` : ''}
+    </article>`).join('')}</div>`;
+}
+
+function renderResearchEvidenceDocs(items) {
+  if (!items || items.length === 0) {
+    return '<p class="section-copy">종목과 매칭된 리서치 문서가 없습니다.</p>';
+  }
+  return `<div class="timeline-grid">${items.map((item) => `
+    <article class="timeline-card">
+      <div class="timeline-meta">
+        <span class="timeline-chip">${escapeHtml(item.house_name || '-')}</span>
+        <span class="timeline-chip">${escapeHtml(researchReportTypeLabel(item.report_type))}</span>
+        <span class="timeline-chip">${escapeHtml(researchStanceLabel(item.stance))}</span>
+      </div>
+      <h5>${escapeHtml(item.title || '')}</h5>
+      <p>${escapeHtml(item.summary || '')}</p>
+      <p class="data-footnote">가중치 ${Number(item.weight || 0).toFixed(2)} / 발행 ${escapeHtml(formatKstDateTime(item.published_at_utc))}</p>
+      ${item.url ? `<a class="btn tertiary" href="${escapeHtml(item.url)}" target="_blank" rel="noreferrer">출처 열기</a>` : ''}
+    </article>`).join('')}</div>`;
+}
+
 function renderHeadlineBriefDetail(item) {
   const articles = item?.top_articles || [];
   return `
@@ -600,17 +1040,17 @@ function renderHeadlineBriefDetail(item) {
       ${renderList((item.summary_points || []).map((row) => row))}
     </div>
     <div class="report-section" style="margin-top:16px;">
-      <h4>원문 기사</h4>
-      <div class="timeline-list">${articles.map((article) => `
+      <h4>대표 기사</h4>
+      ${articles.length ? `<div class="timeline-grid">${articles.map((article) => `
         <article class="timeline-card">
           <div class="timeline-meta">
-            <span class="timeline-chip">${escapeHtml(item.section_label || '-')}</span>
+            <span class="timeline-chip">${escapeHtml(article.publisher || '-') }</span>
             <span class="timeline-chip">${escapeHtml(formatKstDateTime(article.published_at_utc))}</span>
           </div>
           <h5>${escapeHtml(article.title || '')}</h5>
           <p>${escapeHtml(article.summary || '')}</p>
-          <a class="btn tertiary" href="${escapeHtml(article.url || '#')}" target="_blank" rel="noreferrer">원문 열기</a>
-        </article>`).join('')}</div>
+          ${article.url ? `<a class="btn tertiary" href="${escapeHtml(article.url)}" target="_blank" rel="noreferrer">상세 보기</a>` : ''}
+        </article>`).join('')}</div>` : '<p class="section-copy">표시할 원문 기사가 없습니다.</p>'}
     </div>`;
 }
 
@@ -630,6 +1070,7 @@ function renderMarketReport(data) {
   const strong = data.strong_sectors || [];
   const weak = data.weak_sectors || [];
   const reps = data.representative_symbols || [];
+  const researchBriefs = data.research_briefs || [];
   const context = deriveMarketRegimeContext(data);
   const summary = marketSummaryText(data, context);
   const topConclusion = renderCollapsibleSection(
@@ -725,6 +1166,22 @@ function renderMarketReport(data) {
       </section>
     </div>`,
     true
+  );
+
+  const researchSection = renderCollapsibleSection(
+    '리서치 체제 해석',
+    '최근 공개 리서치 문서가 시장 체제 판단에 어떻게 반영되는지 설명',
+    `<div class="evidence-grid">
+      <section class="report-section">
+        <h4>리서치 요약 근거</h4>
+        ${renderResearchBriefGrid(researchBriefs)}
+      </section>
+      <section class="report-section">
+        <h4>리서치 기반 해석 사인</h4>
+        ${renderList(researchBriefs.slice(0, 5).map((item) => `${item.house_name}: ${item.summary}`))}
+      </section>
+    </div>`,
+    false
   );
 
   const sectorsSection = renderCollapsibleSection(
@@ -856,6 +1313,7 @@ function renderMarketReport(data) {
       ${decompositionSection}
       ${driversSection}
       ${headlineSection}
+      ${researchSection}
       ${sectorsSection}
       ${actionSection}
       ${invalidationSection}
@@ -1033,8 +1491,12 @@ function renderStockReport(data) {
   const signal = data.source_analysis?.signal || {};
   const explanation = data.source_analysis?.explanation || {};
   const documents = data.recent_timeline || [];
+  const researchDocs = data.research_evidence_docs || [];
+  const researchDocCount = Number(data.research_consensus?.matched_doc_count || 0);
   const context = deriveStockDecisionContext(data);
   const summary = `${data.instrument_name}(${data.ticker})\uc740 \ud604\uc7ac ${data.conclusion} \uad00\uc810\uc774\uba70, \uc0c1\ud0dc\ub294 ${data.state_label}\uc785\ub2c8\ub2e4.`;
+  const linkedDocuments = attachTimelineLinks(documents, data.source_analysis);
+  const linkedDisclosures = attachDocumentLinks(explanation.material_disclosures || [], data.source_analysis);
 
   const topConclusion = renderCollapsibleSection(
     '\uc0c1\ub2e8 \ud575\uc2ec \uacb0\ub860',
@@ -1074,7 +1536,7 @@ function renderStockReport(data) {
           { label: '\ud310\ub2e8 \uc810\uc218', value: Number(data.confidence_score || 0).toFixed(1), tone: toneClassByScore(data.confidence_score) },
           { label: '\ud488\uc9c8 \uc810\uc218', value: Number(data.quality_score || 0).toFixed(1), tone: toneClassByScore(data.quality_score) },
           { label: '\uc2dc\uadf8\ub110 \uc810\uc218', value: Number(signal.score || 0).toFixed(1) },
-          { label: '\ubb38\uc11c \uadfc\uac70 \uc218', value: String(documents.length) },
+          { label: '\uadfc\uac70 \ubb38\uc11c \uc218', value: String(documents.length + researchDocs.length) },
         ])}
       </section>
       <section class="report-section">
@@ -1192,11 +1654,11 @@ function renderStockReport(data) {
     `<div class="evidence-grid">
       <section class="report-section">
         <h4>\ucd5c\uadfc \uc774\ubca4\ud2b8 \ud0c0\uc784\ub77c\uc778</h4>
-        ${renderTimeline(documents)}
+        ${renderTimeline(linkedDocuments)}
       </section>
       <section class="report-section">
         <h4>\ucd5c\uadfc \uacf5\uc2dc \ud575\uc2ec \uc694\uc57d</h4>
-        ${renderDisclosureCards(explanation.material_disclosures || [])}
+        ${renderDisclosureCards(linkedDisclosures)}
       </section>
       <section class="report-section">
         <h4>\ucd5c\uadfc \ub274\uc2a4 \ud575\uc2ec \uc694\uc57d</h4>
@@ -1205,6 +1667,33 @@ function renderStockReport(data) {
       <section class="report-section">
         <h4>\uacf5\uc2dc \ub610\ub294 \ub274\uc2a4 \uc774\ubca4\ud2b8 \uc6b0\uc120\uc21c\uc704</h4>
         ${renderList((explanation.material_disclosures || []).map((item) => `${item.event_label || '\uacf5\uc2dc'} / \uc21c\ud6a8\uacfc ${Number(item.net_score || 0).toFixed(2)} / ${item.title || ''}`))}
+      </section>
+    </div>`,
+    false
+  );
+
+  const researchSection = renderCollapsibleSection(
+    '리서치 컨센서스',
+    '공개 리서치 문서가 종목 판단에 준 영향과 근거',
+    `<div class="evidence-grid">
+      <section class="report-section">
+        <h4>집계 점수</h4>
+        <div>${renderMetricPairs([
+          { label: '매칭 문서 수', value: `${researchDocCount}건` },
+          { label: '추천 점수', value: Number(data.research_consensus?.recommendation_score || 0).toFixed(2) },
+          { label: '목표가 상승여력', value: `${Number(data.research_consensus?.target_price_upside_pct || 0).toFixed(1)}%` },
+          { label: '산업 순풍', value: Number(data.research_consensus?.industry_tailwind_score || 0).toFixed(2) },
+          { label: '산업 역풍', value: Number(data.research_consensus?.industry_headwind_score || 0).toFixed(2) },
+          { label: '근접 촉매', value: Number(data.research_consensus?.catalyst_near_term_score || 0).toFixed(2) },
+        ])}</div>
+      </section>
+      <section class="report-section">
+        <h4>리서치 요약</h4>
+        ${renderList((data.research_summary || []).length ? data.research_summary : ['반영된 리서치 컨센서스 문서가 아직 없습니다.'])}
+      </section>
+      <section class="report-section">
+        <h4>리서치 근거 문서</h4>
+        ${renderResearchEvidenceDocs(researchDocs)}
       </section>
     </div>`,
     false
@@ -1350,6 +1839,7 @@ function renderStockReport(data) {
       ${technicalSection}
       ${eventSection}
       ${financeSection}
+      ${researchSection}
       ${macroSection}
       ${checkpointSection}
       ${trustSection}`,
@@ -1402,7 +1892,7 @@ function formatPrice(value) {
 }
 
 function zoneDistanceText(current, low, high = low) {
-  if (!Number.isFinite(current) || !Number.isFinite(low)) return '계산 불가';
+  if (!Number.isFinite(current) || !Number.isFinite(low)) return '怨꾩궛 遺덇?';
   const target = Number.isFinite(high) ? (low + high) / 2 : low;
   const pct = ((target / current) - 1) * 100;
   return `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`;
@@ -1412,12 +1902,12 @@ function actionRiskProfileSummary(profile, decision) {
   const risk = actionRiskProfileLabel(profile);
   const quality = Number(decision?.quality_score || 0);
   if (profile === 'conservative') {
-    return `${risk} 기준으로 무효화 구간을 상대적으로 좁게 보고, 확인 이후 진입을 우선합니다. 품질 점수 ${quality.toFixed(1)} 이상에서만 공격적 행동을 정당화합니다.`;
+    return `${risk} 기준으로 무효화 구간을 상대적으로 좁게 보고, 확인 이후 진입을 우선합니다. 신뢰 점수 ${quality.toFixed(1)} 이상에서만 공격적 행동이 정당화됩니다.`;
   }
   if (profile === 'aggressive') {
-    return `${risk} 기준으로 눌림 이후 빠른 재진입을 허용하지만, 변동성 확대 구간에서는 손절 기준을 명확히 두는 전제가 필요합니다.`;
+    return `${risk} 기준으로 알림 이후 빠른 대응은 허용하지만, 변동성 확대 구간에서는 손절 기준을 명확히 두는 전제가 필요합니다.`;
   }
-  return `${risk} 기준으로 추세와 이벤트를 함께 보되, 추가 확인 전 과도한 추격은 제한하는 접근입니다.`;
+  return `${risk} 기준으로 추세와 이벤트를 함께 보되, 추가 확인 전 과도한 추격은 제한하는 접근이 적합합니다.`;
 }
 
 function deriveActionContext(data) {
@@ -1425,7 +1915,6 @@ function deriveActionContext(data) {
   const analysis = decision.source_analysis || {};
   const features = analysis.features || {};
   const signal = analysis.signal || {};
-  const explanation = analysis.explanation || {};
   const profile = String(data.risk_profile || 'balanced');
   const params = actionProfileParams(profile);
   const close = Number(features.close || 0);
@@ -1452,23 +1941,23 @@ function deriveActionContext(data) {
     : null;
 
   const coreAssumptions = [
-    `시장 체제 ${decision.market_regime || '-'}가 단기간 급격히 악화되지 않는다는 가정`,
+    `시장 체제 ${decision.market_regime || '-'}가 급격히 악화되지 않는다는 가정`,
     `${decision.sector_name || '해당 섹터'} 자금 흐름과 대장주 연동이 급격히 꺾이지 않는다는 가정`,
-    `최근 공시/이벤트 해석이 ${decision.conclusion || '현재 판단'}을 뒤집을 정도로 악화되지 않는다는 가정`,
+    `최근 공시와 이벤트 해석이 ${decision.conclusion || '현재 판단'}을 뒤집을 정도로 악화되지 않는다는 가정`,
   ];
   const requiredConditions = [...(data.preconditions || [])].slice(0, 3);
   const supportingConditions = [
-    bullish[0] || '추세와 수급이 동시에 유지될 것',
-    decision.sector_momentum_summary?.[0] || '섹터 모멘텀이 유지될 것',
-    decision.policy_macro_summary?.[0] || '거시 변수의 급격한 악화가 없을 것',
+    bullish[0] || '추세와 수급이 동시에 유지되는지 확인',
+    decision.sector_momentum_summary?.[0] || '섹터 모멘텀이 유지되는지 확인',
+    decision.policy_macro_summary?.[0] || '거시 환경의 급격한 악화가 없는지 확인',
   ].filter(Boolean);
   const unconfirmedVariables = [
     triggers[0] || '신규 이벤트 발생 여부',
     timeline[0] ? `${timeline[0].event_type}: ${timeline[0].title}` : '최신 이벤트 후속 확인',
-    decision.policy_macro_summary?.[1] || '거시 변수 추가 확인',
+    decision.policy_macro_summary?.[1] || '거시 변수 추가 점검',
   ].filter(Boolean);
   const avoidNowReasons = [
-    bearish[0] || '즉시 추격 시 손익비가 나빠질 수 있음',
+    bearish[0] || '즉시 추격 매수의 기대보상이 충분하지 않음',
     signal.risk_flags?.[0] || '리스크 플래그 존재',
     Number(features.event_volatility_score || 0) >= 0.65 ? '이벤트 당일 변동성 주의 모드' : '확인 전 성급한 진입 회피',
   ].filter(Boolean);
@@ -1476,60 +1965,60 @@ function deriveActionContext(data) {
   const immediateAction = data.recommended_action.includes('진입') || data.recommended_action.includes('매수')
     ? `현재가 ${formatPrice(close)} 기준으로 매수 관심 구간 접근 여부를 먼저 확인합니다.`
     : data.recommended_action.includes('축소')
-      ? `현재 보유 비중과 무효화 가격 ${formatPrice(invalidPrice)} 이탈 여부를 가장 먼저 점검합니다.`
-      : `지금은 실행보다 확인이 우선입니다. 최근 이벤트와 거래대금 변화를 먼저 점검합니다.`;
+      ? `현재 보유 비중과 무효화 가격 ${formatPrice(invalidPrice)} 이탈 여부를 먼저 점검합니다.`
+      : '지금은 실행보다 확인이 우선입니다. 최근 이벤트와 거래대금 변화를 먼저 점검합니다.';
 
   const step1 = requiredConditions[0] || '핵심 전제 조건을 먼저 확인합니다.';
-  const step2 = requiredConditions[1] || '구간 접근 여부와 거래량을 함께 확인합니다.';
+  const step2 = requiredConditions[1] || '구간 접근 여부와 거래대금을 함께 점검합니다.';
   const followIfReady = data.recommended_action.includes('매수') || data.recommended_action.includes('진입')
     ? '조건이 충족되면 한 번에 진입하지 말고 분할로 접근합니다.'
-    : '조건이 충족되더라도 바로 방향 전환하지 말고 후속 확인 후 행동합니다.';
+    : '조건이 충족되더라도 바로 방향 전환하지 말고 후속 확인 뒤 행동합니다.';
   const followIfNotReady = '조건이 미충족이면 관찰 유지로 전환하고, 다음 체크 시점까지 계획을 보류합니다.';
   const reviewTiming = [
     `기본 유효 기간: ${data.plan_validity_window || '-'}`,
     timeline[0] ? `다음 재점검: ${timeline[0].event_type} 후속 확인 시점` : '다음 재점검: 1~3거래일 내 재평가',
-    Number(features.event_volatility_score || 0) >= 0.65 ? '이벤트 당일에는 장중보다 종가 기준 재점검을 우선합니다.' : '장중 급변이 없으면 종가 기준으로 재평가합니다.',
+    Number(features.event_volatility_score || 0) >= 0.65 ? '이벤트 당일에는 추세보다 종가 기준 재점검을 우선합니다.' : '추가 급등락이 없으면 종가 기준으로 재평가합니다.',
   ];
 
   const noPositionBullets = [
-    data.no_position_plan || '미보유자는 무리한 추격보다 조건 충족 후 진입이 우선입니다.',
-    `진입 조건: ${requiredConditions[0] || '추세 및 이벤트 확인'}`,
-    `대기 조건: ${avoidNowReasons[0] || '손익비 재확인 필요'}`,
-    `포기 조건: ${data.invalidation_zone || '무효화 구간 진입 시 보류'}`,
+    data.no_position_plan || '미보유자는 무리한 추격보다 조건 충족 후 진입을 우선합니다.',
+    `진입 조건: ${requiredConditions[0] || '추세와 이벤트 확인'}`,
+    `대기 조건: ${avoidNowReasons[0] || '보상 대비 위험 확인 필요'}`,
+    `무효화 조건: ${data.invalidation_zone || '무효화 구간 진입 시 보류'}`,
   ];
   const holdingBullets = [
     data.holding_plan || '보유자는 보유 지속 조건과 축소 조건을 동시에 관리해야 합니다.',
     `유지 조건: ${supportingConditions[0] || '상승 근거 유지'}`,
-    `추가매수 조건: ${data.buy_interest_zone}`,
+    `추가 매수 조건: ${data.buy_interest_zone}`,
     `축소 조건: ${data.invalidation_zone}`,
   ];
   if (currentPnL !== null) {
-    holdingBullets.push(`평균단가 ${formatPrice(data.avg_buy_price)} 기준 현재 손익은 ${currentPnL >= 0 ? '+' : ''}${currentPnL.toFixed(1)}%입니다.`);
+    holdingBullets.push(`평균 매입가 ${formatPrice(data.avg_buy_price)} 기준 현재 손익은 ${currentPnL >= 0 ? '+' : ''}${currentPnL.toFixed(1)}%입니다.`);
   }
 
   const pnlRules = [
-    '수익 중: 1차 목표 구간에서 일부 이익 실현 여부를 점검합니다.',
-    '본전 근처: 거래량 약화나 이벤트 악화가 보이면 방어를 우선합니다.',
-    '손실 중: 무효화 조건을 넘기면 미련 없이 계획을 재설정합니다.',
+    '수익 중에는 1차 목표 구간에서 일부 이익 실현 여부를 점검합니다.',
+    '손실 방어는 거래량 약화나 이벤트 악화가 보이면 우선합니다.',
+    '무효화 조건이 성립하면 미련 없이 계획을 재설정합니다.',
   ];
 
   const horizonPlans = [
-    `단기: ${Number(decision.short_term_score || 0).toFixed(1)}점 기준으로 이벤트와 거래대금 확인이 핵심입니다.`,
-    `스윙: ${Number(decision.swing_score || 0).toFixed(1)}점 기준으로 섹터 자금 유입과 추세 확인이 핵심입니다.`,
+    `단기: ${Number(decision.short_term_score || 0).toFixed(1)}점 기준으로 이벤트와 거래대금 확인이 중요합니다.`,
+    `스윙: ${Number(decision.swing_score || 0).toFixed(1)}점 기준으로 섹터 자금 유입과 추세 확인이 중요합니다.`,
     `중기: ${Number(decision.midterm_score || 0).toFixed(1)}점 기준으로 실적 지속성과 거시 부담을 함께 봅니다.`,
   ];
   const horizonGap = [
-    `주도 기간은 ${actionHorizonLabel(data.investment_horizon)}이며, 플랜 유효 기간은 ${data.plan_validity_window || '-'}입니다.`,
-    '단기는 빠른 재평가, 스윙은 구간 대응, 중기는 조건 유지 여부 확인 중심으로 읽어야 합니다.',
-    '기간이 길수록 구간 폭은 넓어지고, 손절/재평가 기준은 상대적으로 느슨해집니다.',
+    `주요 투자 기간은 ${actionHorizonLabel(data.investment_horizon)}이고, 계획 유효 기간은 ${data.plan_validity_window || '-'}입니다.`,
+    '단기는 빠른 재평가, 스윙은 구간 대응, 중기는 조건 유지 여부 확인 중심으로 봅니다.',
+    '기간이 길수록 구간 폭은 넓어지고 손절·재평가 기준도 상대적으로 느슨해집니다.',
   ];
 
   const riskCustomization = [
-    `보수형: 확인 후 진입, 무효화 구간 엄격 적용`,
-    `균형형: 추세와 이벤트를 함께 확인하며 분할 접근`,
-    `공격형: 눌림 이후 빠른 재진입 허용, 대신 손절 기준 명확화`,
+    '보수형은 확인 후 진입, 무효화 구간 엄격 적용',
+    '균형형은 추세와 이벤트를 함께 확인하고 분할 접근',
+    '공격형은 알림 이후 빠른 진입을 허용하되 손절 기준을 명확히 유지',
     actionRiskProfileSummary(profile, decision),
-    `현재 위험 성향 ${actionRiskProfileLabel(profile)} 기준 손실 허용 폭은 약 ${(params.invalidPct * 100).toFixed(1)}% 내외로 설계되어 있습니다.`,
+    `현재 위험 성향 ${actionRiskProfileLabel(profile)} 기준 최대 허용 손실 폭은 약 ${(params.invalidPct * 100).toFixed(1)}% 내외입니다.`,
   ];
 
   const scenarioBias = data.recommended_action.includes('축소')
@@ -1537,7 +2026,7 @@ function deriveActionContext(data) {
     : data.recommended_action.includes('진입') || data.recommended_action.includes('매수')
       ? '상방 시나리오 우세'
       : '중립 시나리오 우세';
-  const scenarioNotes = (data.scenarios || []).map((item, index) => `${item.scenario}: ${item.trigger} / ${item.action} / ${item.expected_path} / 감시 포인트 ${triggers[index] || '추세와 거래량 확인'}`);
+  const scenarioNotes = (data.scenarios || []).map((item, index) => `${item.scenario}: ${item.trigger} / ${item.action} / ${item.expected_path} / 감시 요인 ${triggers[index] || '추세와 거래량 확인'}`);
 
   const rationaleTop = [
     ...(bullish.slice(0, 3)),
@@ -1554,23 +2043,23 @@ function deriveActionContext(data) {
   const marketSectorImpact = [
     `시장 체제 ${decision.market_regime || '-'}가 행동 계획의 기본 방향을 결정합니다.`,
     `섹터 점수 ${Number(decision.sector_score || 0).toFixed(1)}와 상대강도 ${Number(decision.sector_relative_strength || 0).toFixed(1)}가 진입 적극성을 조절합니다.`,
-    `이벤트 점수 ${Number(decision.event_score || 0).toFixed(1)}와 품질 점수 ${Number(decision.quality_score || 0).toFixed(1)}가 실행 속도를 조절합니다.`,
+    `이벤트 점수 ${Number(decision.event_score || 0).toFixed(1)}와 신뢰 점수 ${Number(decision.quality_score || 0).toFixed(1)}가 실행 강도를 조절합니다.`,
   ];
 
   const checklist = [
     `실적 일정 확인 필요: ${timeline.some((item) => String(item.event_type || '').includes('실적')) ? '예' : '권장'}`,
     `공시 일정 확인 필요: ${timeline.some((item) => String(item.event_type || '').includes('공시')) ? '예' : '권장'}`,
     `거시 이벤트 확인 필요: ${decision.policy_macro_summary?.length ? '예' : '권장'}`,
-    `거래량/변동성 확인 필요: ${Number(features.rel_volume || 0) < 1 || Number(features.volatility_20d || 0) > 0.08 ? '예' : '기본 확인'}`,
-    '분할 매수 시에는 첫 진입 후 거래량 유지 여부를 다시 점검합니다.',
-    `진입 후 관리 포인트: ${triggers[0] || '최신 이벤트와 무효화 가격을 같이 확인'}`,
+    `거래량·변동성 확인 필요: ${Number(features.rel_volume || 0) < 1 || Number(features.volatility_20d || 0) > 0.08 ? '예' : '기본 확인'}`,
+    '분할 매수 전에는 첫 진입 뒤 거래량 유지 여부를 다시 점검합니다.',
+    `진입 전 관리 요인: ${triggers[0] || '최신 이벤트와 무효화 가격을 함께 확인'}`,
   ];
 
   const invalidation = [
     `가격 기반 무효화: ${data.invalidation_zone}`,
-    `이벤트 기반 무효화: ${bearish[0] || '새 악재 공시 또는 이벤트 악화'}`,
+    `이벤트 기반 무효화: ${bearish[0] || '악재성 공시 또는 이벤트 악화'}`,
     `거시 기반 무효화: ${decision.policy_macro_summary?.[0] || '거시 환경 급변'}`,
-    `실적/공시 기반 무효화: ${triggers[0] || '핵심 가정 붕괴 시 계획 재설정'}`,
+    `실적·공시 기반 무효화: ${triggers[0] || '핵심 가정 붕괴 시 계획 재설정'}`,
     '무효화 시 대체 행동: 관찰 유지 또는 비중 축소로 전환',
   ];
 
@@ -1614,9 +2103,11 @@ function deriveActionContext(data) {
 function renderActionReport(data) {
   const decision = data.source_decision || {};
   const analysis = decision.source_analysis || {};
-  const signal = analysis.signal || {};
   const context = deriveActionContext(data);
   const summary = `${data.instrument_name}(${data.ticker})의 현재 실행 권고는 ${data.recommended_action}입니다.`;
+  const decisionDocuments = attachTimelineLinks(decision.recent_timeline || [], decision.source_analysis);
+  const decisionDisclosures = attachDocumentLinks(decision.source_analysis?.explanation?.material_disclosures || [], decision.source_analysis);
+  const decisionResearchDocs = decision.research_evidence_docs || [];
 
   const topConclusion = renderCollapsibleSection(
     '상단 행동 결론',
@@ -1627,18 +2118,17 @@ function renderActionReport(data) {
         <div>${renderMetricPairs([
           { label: '종목', value: `${data.instrument_name}(${data.ticker})` },
           { label: '최종 권고', value: data.recommended_action || '-' },
-          { label: '행동 한 줄 요약', value: summary },
-          { label: '행동 확신도', value: Number(data.action_score || 0).toFixed(1) },
-          { label: '유효 투자 기간', value: data.plan_validity_window || '-' },
-          { label: '위험 성향 반영', value: actionRiskProfileLabel(data.risk_profile) },
+          { label: '행동 점수', value: Number(data.action_score || 0).toFixed(1) },
+          { label: '유효 기간', value: data.plan_validity_window || '-' },
+          { label: '위험 성향', value: actionRiskProfileLabel(data.risk_profile) },
         ])}</div>
       </section>
       <section class="report-section">
-        <h4>종목 판단 연결 요약</h4>
+        <h4>종목 판단 연계 요약</h4>
         ${renderList([
           `기반 종목 판단: ${decision.conclusion || '-'} / 상태 ${decision.state_label || '-'}`,
-          `시장 체제: ${decision.market_regime || '-'} / 품질 점수 ${Number(decision.quality_score || 0).toFixed(1)}`,
-          data.action_reason || '행동 이유 없음',
+          `시장 체제: ${decision.market_regime || '-'} / 신뢰 점수 ${Number(decision.quality_score || 0).toFixed(1)}`,
+          data.action_reason || '행동 이유가 없습니다.',
           actionRiskProfileSummary(data.risk_profile, decision),
         ])}
       </section>
@@ -1648,7 +2138,7 @@ function renderActionReport(data) {
 
   const premiseSection = renderCollapsibleSection(
     '행동 판단의 전제 조건',
-    '이 플랜이 성립하는 가정과 지금 바로 실행을 미뤄야 하는 이유',
+    '이 계획이 성립하는 가정과 지금 바로 실행을 미루는 이유',
     `<div class="evidence-grid">
       <section class="report-section"><h4>핵심 가정 3개</h4>${renderList(context.coreAssumptions)}</section>
       <section class="report-section"><h4>반드시 충족되어야 하는 조건</h4>${renderList(context.requiredConditions)}</section>
@@ -1665,36 +2155,36 @@ function renderActionReport(data) {
     `<div>
       <div class="zone-grid">
         <article class="zone-card"><span>매수 관심 구간</span><strong>${escapeHtml(context.buyZone.label)}</strong></article>
-        <article class="zone-card"><span>최적 대기 구간</span><strong>${escapeHtml(context.waitZone.label)}</strong></article>
-        <article class="zone-card"><span>추격 매수 경계</span><strong>${escapeHtml(context.chaseZone.label)}</strong></article>
+        <article class="zone-card"><span>대기 구간</span><strong>${escapeHtml(context.waitZone.label)}</strong></article>
+        <article class="zone-card"><span>추격 경계 구간</span><strong>${escapeHtml(context.chaseZone.label)}</strong></article>
         <article class="zone-card"><span>무효화 구간</span><strong>${escapeHtml(context.invalidZone.label)} 하회</strong></article>
         <article class="zone-card"><span>1차 목표 구간</span><strong>${escapeHtml(context.target1.label)}</strong></article>
         <article class="zone-card"><span>2차 목표 구간</span><strong>${escapeHtml(context.target2.label)}</strong></article>
       </div>
       <div class="evidence-grid" style="margin-top:16px;">
         <section class="report-section">
-          <h4>구간별 의미</h4>
+          <h4>구간별 해석</h4>
           ${renderList([
-            `가치 구간: ${context.buyZone.label}에서 손익비가 가장 우호적입니다.`,
-            `확인 구간: ${context.waitZone.label}에서는 조건 충족 여부를 다시 확인합니다.`,
-            `과열 경계 구간: ${context.chaseZone.label}부터는 추격 리스크가 커집니다.`,
-            `무효화 기준: ${context.invalidZone.label} 하회 시 현재 플랜을 재설정합니다.`,
+            `가치 구간: ${context.buyZone.label}에서는 기대보상이 비교적 유리합니다.`,
+            `대기 구간: ${context.waitZone.label}에서는 조건 충족 여부를 다시 점검합니다.`,
+            `추격 경계: ${context.chaseZone.label} 부근은 추격 리스크가 커질 수 있습니다.`,
+            `무효화 기준: ${context.invalidZone.label} 하회 시 현재 계획을 재설정합니다.`,
           ])}
         </section>
         <section class="report-section">
-          <h4>현재가와 각 구간 사이 거리</h4>
+          <h4>현재가와의 거리</h4>
           ${renderList([
-            `현재가 -> 매수 관심 구간 중심: ${zoneDistanceText(context.close, context.buyZone.low, context.buyZone.high)}`,
-            `현재가 -> 1차 목표 중심: ${zoneDistanceText(context.close, context.target1.low, context.target1.high)}`,
-            `현재가 -> 2차 목표 중심: ${zoneDistanceText(context.close, context.target2.low, context.target2.high)}`,
+            `현재가 -> 매수 관심 구간: ${zoneDistanceText(context.close, context.buyZone.low, context.buyZone.high)}`,
+            `현재가 -> 1차 목표: ${zoneDistanceText(context.close, context.target1.low, context.target1.high)}`,
+            `현재가 -> 2차 목표: ${zoneDistanceText(context.close, context.target2.low, context.target2.high)}`,
             `현재가 -> 무효화 가격: ${zoneDistanceText(context.close, context.invalidZone.low)}`,
           ])}
         </section>
         <section class="report-section">
-          <h4>위험 대비 기대보상 비율</h4>
+          <h4>보상 대비 위험</h4>
           ${renderList([
-            `1차 목표 기준 위험 대비 기대보상 비율은 ${Number(context.rewardRisk || 0).toFixed(2)}배입니다.`,
-            Number(context.rewardRisk || 0) >= 1 ? '보상 구간이 손실 허용 폭보다 넓은 편입니다.' : '보상 구간이 손실 허용 폭보다 좁아 보수적 접근이 필요합니다.',
+            `1차 목표 기준 보상 대비 위험 비율은 ${Number(context.rewardRisk || 0).toFixed(2)}배입니다.`,
+            Number(context.rewardRisk || 0) >= 1 ? '보상 구간이 위험 구간보다 넓은 편입니다.' : '보상 구간이 충분하지 않아 보수적 접근이 필요합니다.',
           ])}
         </section>
       </div>
@@ -1709,8 +2199,8 @@ function renderActionReport(data) {
       <section class="report-section"><h4>지금 해야 할 1순위 행동</h4><p class="section-copy">${escapeHtml(context.immediateAction)}</p></section>
       <section class="report-section"><h4>1차 실행 단계</h4>${renderList([context.step1, context.step2])}</section>
       <section class="report-section"><h4>조건 충족 시 후속 행동</h4>${renderList([context.followIfReady])}</section>
-      <section class="report-section"><h4>조건 미충족 시 대안 행동</h4>${renderList([context.followIfNotReady])}</section>
-      <section class="report-section"><h4>재검토 시점</h4>${renderList(context.reviewTiming)}</section>
+      <section class="report-section"><h4>조건 미충족 시 대체 행동</h4>${renderList([context.followIfNotReady])}</section>
+      <section class="report-section"><h4>재점검 시점</h4>${renderList(context.reviewTiming)}</section>
     </div>`,
     true
   );
@@ -1728,7 +2218,7 @@ function renderActionReport(data) {
 
   const horizonSection = renderCollapsibleSection(
     '투자 기간별 계획',
-    '단기, 스윙, 중기 계획과 허용 리스크 차이',
+    '단기, 스윙, 중기 계획과 리스크 차이',
     `<div class="evidence-grid">
       <section class="report-section"><h4>기간별 실행 관점</h4>${renderList(context.horizonPlans)}</section>
       <section class="report-section"><h4>기간별 구간 및 리스크 차이</h4>${renderList(context.horizonGap)}</section>
@@ -1745,8 +2235,8 @@ function renderActionReport(data) {
         { label: '투자 기간', value: actionHorizonLabel(data.investment_horizon) },
         { label: '위험 성향', value: actionRiskProfileLabel(data.risk_profile) },
         { label: '투자 목적', value: actionObjectiveLabel(data.objective) },
-        { label: '현재 보유 여부', value: data.has_position ? '보유 중' : '미보유' },
-        { label: '평균단가', value: Number.isFinite(Number(data.avg_buy_price)) && Number(data.avg_buy_price) > 0 ? formatPrice(data.avg_buy_price) : '입력 없음' },
+        { label: '보유 여부', value: data.has_position ? '보유 중' : '미보유' },
+        { label: '평균 매입가', value: Number.isFinite(Number(data.avg_buy_price)) && Number(data.avg_buy_price) > 0 ? formatPrice(data.avg_buy_price) : '입력 없음' },
       ])}</div></section>
     </div>`,
     false
@@ -1754,7 +2244,7 @@ function renderActionReport(data) {
 
   const scenarioSection = renderCollapsibleSection(
     '시나리오별 실행 전략',
-    '상방, 중립, 하방 시나리오와 감시 포인트',
+    '상방, 중립, 하방 시나리오와 감시 요인',
     `<div class="evidence-grid">
       <section class="report-section"><h4>시나리오 우세도</h4>${renderList([context.scenarioBias])}</section>
       <section class="report-section"><h4>시나리오별 실행 요약</h4>${renderList(context.scenarioNotes)}</section>
@@ -1767,24 +2257,44 @@ function renderActionReport(data) {
     '왜 이런 행동 권고가 나왔는지, 무엇이 계획을 지지하고 무엇이 반대하는지 설명',
     `<div class="evidence-grid">
       <section class="report-section"><h4>핵심 근거 Top 5</h4>${renderList(context.rationaleTop)}</section>
-      <section class="report-section"><h4>반대 근거 Top 3</h4>${renderList(context.contraryTop.length ? context.contraryTop : ['뚜렷한 반대 근거는 제한적입니다.'])}</section>
-      <section class="report-section"><h4>종목 판단에서 이어받은 포인트</h4>${renderList(context.inheritedPoints)}</section>
+      <section class="report-section"><h4>반대 근거 Top 3</h4>${renderList(context.contraryTop.length ? context.contraryTop : ['강한 반대 근거는 제한적입니다.'])}</section>
+      <section class="report-section"><h4>종목 판단에서 이어받은 신호</h4>${renderList(context.inheritedPoints)}</section>
       <section class="report-section"><h4>시장/섹터 환경 영향</h4>${renderList(context.marketSectorImpact)}</section>
+    </div>`,
+    false
+  );
+
+  const sourceSection = renderCollapsibleSection(
+    '원문 및 출처 문서',
+    '행동 계획 판단에 사용된 뉴스, 공시, 리서치 문서 출처',
+    `<div class="evidence-grid">
+      <section class="report-section">
+        <h4>근거 문서 타임라인</h4>
+        ${renderTimeline(decisionDocuments)}
+      </section>
+      <section class="report-section">
+        <h4>공시 원문 출처</h4>
+        ${renderDisclosureCards(decisionDisclosures)}
+      </section>
+      <section class="report-section" style="grid-column: 1 / -1;">
+        <h4>리서치 출처 문서</h4>
+        ${renderResearchEvidenceDocs(decisionResearchDocs)}
+      </section>
     </div>`,
     false
   );
 
   const checklistSection = renderCollapsibleSection(
     '실행 전 체크리스트 및 무효화 조건',
-    '실행 전 점검 항목과 플랜을 버려야 하는 조건',
+    '실행 전 점검 항목과 계획을 버려야 하는 조건',
     `<div class="evidence-grid">
       <section class="report-section"><h4>실행 전 체크리스트</h4>${renderList(context.checklist)}</section>
-      <section class="report-section"><h4>플랜 무효화 조건</h4>${renderList(context.invalidation)}</section>
-      <section class="report-section"><h4>신뢰도 / 출처</h4>${renderList([
+      <section class="report-section"><h4>계획 무효화 조건</h4>${renderList(context.invalidation)}</section>
+      <section class="report-section"><h4>설명과 출처</h4>${renderList([
         `원천 분석 리포트 참조: ${decision.instrument_name || '-'} Stock Decision 기반`,
         `행동 계획 생성 기준: ${decision.market_regime || '-'} / 판단 점수 ${Number(decision.confidence_score || 0).toFixed(1)} / 행동 점수 ${Number(data.action_score || 0).toFixed(1)}`,
         `데이터 최신성: ${freshnessLabel(data.generated_at_utc)}`,
-        `판단 한계: Action Planner는 Stock Decision 결과를 실행 언어로 재구성한 계획이며 자동매매 지시가 아닙니다.`,
+        'Action Planner는 Stock Decision 결과를 실행 언어로 재구성한 계획이며 자동 매매 지시가 아닙니다.',
         '데이터 출처: KIS, NAVER/NewsAPI, OpenDART, KIND, 국내외 거시 데이터, 정책/문서 배치 데이터',
       ])}</section>
     </div>`,
@@ -1794,7 +2304,7 @@ function renderActionReport(data) {
   return reportShell({
     badges: ['Action Planner 리포트', data.recommended_action, actionHorizonLabel(data.investment_horizon), actionRiskProfileLabel(data.risk_profile)],
     title: summary,
-    summary: `${data.action_reason} 이 리포트는 종목 판단 결과를 실제 실행 가능한 계획으로 변환해, 전제 조건과 가격 구간, 후속 행동까지 한 번에 정리합니다.`,
+    summary: `${data.action_reason} 이 리포트는 종목 판단 결과를 실제 실행 가능한 계획으로 바꿔, 전제 조건과 가격 구간, 후속 행동까지 한 번에 정리합니다.`,
     statusHtml: renderStatus(data.pipeline_status),
     body: `
       ${renderSummaryGrid([
@@ -1812,20 +2322,41 @@ function renderActionReport(data) {
       ${profileSection}
       ${scenarioSection}
       ${rationaleSection}
+      ${sourceSection}
       ${checklistSection}`,
   });
 }
 
 function renderWatchReport(data) {
   const signal = data.source_signal || {};
+  const analysis = data.source_analysis || {};
+  const explanation = analysis.explanation || {};
+  const linkedDocuments = buildAnalysisEvidenceItems(analysis);
+  const linkedDisclosures = attachDocumentLinks(explanation.material_disclosures || [], analysis);
   const summary = data.should_alert_now
-    ? `${data.instrument_name}은 현재 즉시 점검이 필요한 상태입니다.`
-    : `${data.instrument_name}은 현재 즉시 대응보다 관찰 유지가 우선입니다.`;
+    ? `${data.instrument_name}는 현재 즉시 점검이 필요한 상태입니다.`
+    : `${data.instrument_name}는 현재 즉시 대응보다 관찰 유지가 우선입니다.`;
+
+  const sourceSection = renderCollapsibleSection(
+    '근거 원문 및 출처',
+    '현재 알림 판단에 사용된 뉴스, 공시, 문서 원문 출처',
+    `<div class="evidence-grid">
+      <section class="report-section">
+        <h4>근거 문서 타임라인</h4>
+        ${renderTimeline(linkedDocuments.slice(0, 7))}
+      </section>
+      <section class="report-section">
+        <h4>공시 원문 출처</h4>
+        ${renderDisclosureCards(linkedDisclosures.slice(0, 5))}
+      </section>
+    </div>`,
+    false
+  );
 
   return reportShell({
-    badges: ['Watchlist Alerts 리포트', data.monitoring_state, data.should_alert_now ? '즉시 점검' : '관찰 유지'],
+    badges: ['Watchlist Alerts 리포트', data.monitoring_state, data.should_alert_now ? '즉시 대응' : '관찰 유지'],
     title: summary,
-    summary: `${data.alert_preview} 알림 리포트는 현재 시점의 이벤트와 리스크를 다시 점검해 생성됩니다.`,
+    summary: `${data.alert_preview} 알림 리포트는 현재 시점의 이벤트와 리스크를 다시 점검해 생성합니다.`,
     statusHtml: renderStatus(data.pipeline_status),
     body: `
       ${renderSummaryGrid([
@@ -1836,7 +2367,7 @@ function renderWatchReport(data) {
       ])}
       <div class="evidence-grid">
         <section class="report-section">
-          <h4>즉시 확인할 트리거</h4>
+          <h4>즉시 점검 트리거</h4>
           ${renderList(data.key_triggers || [])}
         </section>
         <section class="report-section">
@@ -1848,10 +2379,10 @@ function renderWatchReport(data) {
           ${renderList(data.catalyst_watchlist || [])}
         </section>
         <section class="report-section">
-          <h4>활용 데이터 요약</h4>
+          <h4>사용 데이터 요약</h4>
           <div>${renderMetricPairs([
             { label: '알림 판단', value: data.should_alert_now ? '즉시 대응 필요' : '관찰 유지' },
-            { label: '이벤트 근거', value: `${data.source_analysis?.explanation?.document_summaries?.length || 0}건 반영` },
+            { label: '이벤트 근거', value: `${analysis.explanation?.document_summaries?.length || 0}건 반영` },
             { label: '시그널 유형', value: signal.signal_type || '-' },
             { label: '시그널 방향', value: signal.direction || '-' },
           ])}</div>
@@ -1861,9 +2392,10 @@ function renderWatchReport(data) {
         <h4>알림 메시지 미리보기</h4>
         <p class="section-copy">${escapeHtml(data.alert_preview)}</p>
       </section>
+      ${sourceSection}
       <section class="report-section">
         <h4>근거 데이터 출처</h4>
-        <p class="data-footnote">Watchlist Alerts는 시세, 뉴스, 공시, 재무제표, 정책/거시 데이터와 알림 채널 설정을 결합해 현재 시점의 대응 필요 여부를 계산합니다.</p>
+        <p class="data-footnote">Watchlist Alerts는 시세, 뉴스, 공시, 재무제표, 섹터/거시 데이터를 결합해 현재 시점의 대응 필요 여부를 계산합니다.</p>
       </section>`,
   });
 }
@@ -1896,13 +2428,167 @@ function renderSubscriptions(items) {
   [...target.querySelectorAll('.subscription-delete')].forEach((button) => {
     button.addEventListener('click', async () => {
       try {
-        await request('DELETE', `/api/v1/watchlist-alerts/subscriptions/${encodeURIComponent(button.dataset.ticker)}?channel=telegram`);
-        qs('#subscription-output').textContent = `${button.dataset.ticker} 워치리스트를 삭제했습니다.`;
+        const ticker = button.dataset.ticker || '';
+        await request('DELETE', `/api/v1/watchlist-alerts/subscriptions/${encodeURIComponent(ticker)}?channel=telegram`);
+        qs('#subscription-output').textContent = `${ticker} 워치리스트를 삭제했습니다.`;
         await refreshSubscriptions();
       } catch (err) {
         qs('#subscription-output').textContent = formatError(err);
       }
     });
+  });
+}
+
+function extractServiceStatus(data) {
+  if (!data || typeof data !== 'object') return {};
+  const nested = data.status && typeof data.status === 'object' ? data.status : {};
+  return {
+    response_source: data.response_source || nested.response_source || null,
+    analysis_mode: data.analysis_mode || nested.analysis_mode || null,
+    snapshot_ready: Boolean(data.snapshot_ready || nested.snapshot_ready),
+    snapshot_generated_at_utc: data.snapshot_generated_at_utc || nested.snapshot_generated_at_utc || null,
+    cache_expires_at_utc: data.cache_expires_at_utc || nested.cache_expires_at_utc || null,
+    note: data.note || nested.note || null,
+  };
+}
+
+function storeServiceResult(service, data, html, title) {
+  uiState.statusByService[service] = extractServiceStatus(data);
+  recordRun(service, title, data, html);
+  mountReport(service, html);
+  renderWorkspaceSummary(service);
+}
+
+function cloneTemplate(templateId) {
+  const template = qs(templateId);
+  return template.content.cloneNode(true);
+}
+
+function renderControlPanel(service, panelMode = 'default') {
+  const target = qs('#service-control-panel');
+  const title = qs('#control-panel-title');
+  if (!target || !title) return;
+  target.innerHTML = '<div id="control-feedback" class="inline-feedback"></div>';
+  const feedback = () => qs('#control-feedback');
+  const renderWrappedForm = (heading, copy, templateId, onSubmit, submitLabel) => {
+    const card = document.createElement('section');
+    card.className = 'inline-form-card';
+    card.innerHTML = `<h4>${escapeHtml(heading)}</h4><p>${escapeHtml(copy)}</p>`;
+    const fragment = cloneTemplate(templateId);
+    const form = fragment.querySelector('form');
+    const submit = fragment.querySelector('button[type="submit"]');
+    if (submit && submitLabel) submit.textContent = submitLabel;
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      feedback().textContent = '';
+      try {
+        await onSubmit(form);
+      } catch (err) {
+        feedback().textContent = formatError(err);
+      }
+    });
+    card.appendChild(fragment);
+    target.appendChild(card);
+  };
+
+  if (service === 'market') {
+    title.textContent = 'Market Regime';
+    const card = document.createElement('section');
+    card.className = 'inline-form-card';
+    card.innerHTML = `
+      <h4>\uC624\uB298 \uC2DC\uC7A5 \uCCB4\uC81C \uB9AC\uD3EC\uD2B8</h4>
+      <p class="control-hint">\uC6B0\uCE21 \uB9AC\uD3EC\uD2B8 \uC601\uC5ED\uC5D0 \uD604\uC7AC \uC2DC\uC7A5 \uCCB4\uC81C \uB9AC\uD3EC\uD2B8\uB97C \uC0DD\uC131\uD569\uB2C8\uB2E4.</p>
+      <div class="sheet-actions"><button id="control-run-market" class="btn primary" type="button">\uB9AC\uD3EC\uD2B8 \uC2E4\uD589</button></div>`;
+    target.appendChild(card);
+    qs('#control-run-market').addEventListener('click', runMarket);
+    return;
+  }
+
+  if (service === 'stock') {
+    title.textContent = 'Stock Decision';
+    renderWrappedForm('\uC885\uBAA9 \uC785\uB825 \uC870\uAC74', '\uD2F0\uCEE4, \uAE30\uC900\uC77C, \uC870\uD68C \uAE30\uAC04\uC744 \uC785\uB825\uD55C \uB4A4 \uB9AC\uD3EC\uD2B8\uB97C \uC0DD\uC131\uD569\uB2C8\uB2E4.', '#tpl-stock-form', runStock, '\uC885\uBAA9 \uD310\uB2E8 \uB9AC\uD3EC\uD2B8 \uC0DD\uC131');
+    return;
+  }
+
+  if (service === 'action') {
+    title.textContent = 'Action Planner';
+    renderWrappedForm('\uD589\uB3D9 \uACC4\uD68D \uC785\uB825 \uC870\uAC74', '\uD22C\uC790 \uAE30\uAC04, \uC704\uD5D8 \uC131\uD5A5, \uBCF4\uC720 \uC5EC\uBD80\uB97C \uC785\uB825\uD574 \uC2E4\uD589 \uACC4\uD68D\uC744 \uC0DD\uC131\uD569\uB2C8\uB2E4.', '#tpl-action-form', runAction, '\uD589\uB3D9 \uACC4\uD68D \uC0DD\uC131');
+    return;
+  }
+
+  if (service === 'watch') {
+    title.textContent = panelMode === 'subscription' ? '\uC6CC\uCE58\uB9AC\uC2A4\uD2B8 \uC800\uC7A5' : 'Watchlist Alerts';
+    renderWrappedForm('\uAD00\uCC30 \uC54C\uB9BC \uC810\uAC80 \uC870\uAC74', '\uD558\uB098\uC758 \uC885\uBAA9\uC5D0 \uB300\uD574 \uD604\uC7AC \uC2DC\uC810\uC758 \uB300\uC751 \uD544\uC694\uC131\uC744 \uC810\uAC80\uD569\uB2C8\uB2E4.', '#tpl-watch-form', runWatch, '\uAD00\uCC30 \uC54C\uB9BC \uB9AC\uD3EC\uD2B8 \uC0DD\uC131');
+    renderWrappedForm('\uC6CC\uCE58\uB9AC\uC2A4\uD2B8 \uC800\uC7A5', '\uC9C0\uC18D \uAD00\uCC30\uC744 \uC704\uD574 \uD574\uB2F9 \uC885\uBAA9\uC744 \uC800\uC7A5\uD615 \uC6CC\uCE58\uB9AC\uC2A4\uD2B8\uC5D0 \uB4F1\uB85D\uD569\uB2C8\uB2E4.', '#tpl-subscription-form', runSubscription, '\uC885\uBAA9 \uC800\uC7A5');
+  }
+}
+
+function openAdminDrawer() {
+  qs('#admin-backdrop').classList.remove('hidden');
+  qs('#admin-drawer').classList.remove('hidden');
+  qs('#admin-drawer').setAttribute('aria-hidden', 'false');
+}
+
+function closeAdminDrawer() {
+  qs('#admin-backdrop').classList.add('hidden');
+  qs('#admin-drawer').classList.add('hidden');
+  qs('#admin-drawer').setAttribute('aria-hidden', 'true');
+}
+
+function setText(selector, value) {
+  const node = qs(selector);
+  if (node) node.textContent = value;
+}
+
+function localizeShell() {
+  setText('.rail-block:nth-of-type(1) .meta-label', '\uC11C\uBE44\uC2A4 \uC120\uD0DD');
+  setText('.rail-block:nth-of-type(1) h2', '\uBD84\uC11D \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4');
+  setText('#toggle-admin', '\uC6B4\uC601 \uB3C4\uAD6C');
+  setText('.rail-block:nth-of-type(2) .meta-label', '\uC785\uB825 \uC870\uAC74');
+  setText('#control-reset', '\uCD08\uAE30 \uD654\uBA74');
+  setText('.rail-block:nth-of-type(3) .meta-label', '\uCD5C\uADFC \uC2E4\uD589 \uC774\uB825');
+  setText('.rail-block:nth-of-type(3) h3', '\uBC14\uB85C \uB3CC\uC544\uAC00\uAE30');
+  setText('.rail-block:nth-of-type(4) .meta-label', '\uC800\uC7A5\uD615 \uC6CC\uCE58\uB9AC\uC2A4\uD2B8');
+  setText('.rail-block:nth-of-type(4) h3', '\uD604\uC7AC \uB4F1\uB85D\uB41C \uAD00\uCC30 \uC885\uBAA9');
+  setText('#launch-subscription', '\uC885\uBAA9 \uC800\uC7A5');
+  setText('#refresh-subscriptions', '\uC0C8\uB85C\uACE0\uCE68');
+  setText('#workspace-kicker', '\uC11C\uBE44\uC2A4 \uAC1C\uC694');
+  setText('.landing-hero .meta-label', '\uC11C\uBE44\uC2A4 \uC120\uD0DD \uD654\uBA74');
+  setText('.landing-hero h2', '\uC2DC\uC7A5 \uD655\uC778\uC5D0\uC11C \uC885\uBAA9 \uD310\uB2E8, \uC2E4\uD589 \uACC4\uD68D, \uAD00\uCC30 \uC54C\uB9BC\uAE4C\uC9C0 \uD55C \uD750\uB984\uC73C\uB85C \uC5F0\uACB0');
+  setText('.landing-hero p:last-child', '\uC88C\uCE21 \uCEE8\uD2B8\uB864 \uB808\uC77C\uC5D0\uC11C \uC11C\uBE44\uC2A4\uB97C \uC120\uD0DD\uD558\uBA74 \uC785\uB825 \uD328\uB110\uACFC \uACB0\uACFC \uB9AC\uD3EC\uD2B8\uAC00 \uBD84\uB9AC\uB41C \uC804\uC6A9 \uD654\uBA74\uC73C\uB85C \uC804\uD658\uB429\uB2C8\uB2E4. \uD604\uC7AC \uC0C9\uAC10\uACFC \uB9AC\uD3EC\uD2B8 \uC2A4\uD0C0\uC77C\uC740 \uC720\uC9C0\uD558\uBA74\uC11C \uC815\uBCF4 \uAD6C\uC870\uB9CC \uC7AC\uAD6C\uC131\uD588\uC2B5\uB2C8\uB2E4.');
+  const tabs = {
+    market: ['\uC989\uC2DC \uC2E4\uD589', 'Market Regime', '\uC2DC\uC7A5 \uCCB4\uC81C\uC640 \uAC15\uC138\u00B7\uC57D\uC138 \uC139\uD130\uB97C \uBA3C\uC800 \uD655\uC778\uD569\uB2C8\uB2E4.'],
+    stock: ['\uC870\uAC74 \uC785\uB825', 'Stock Decision', '\uAC1C\uBCC4 \uC885\uBAA9\uC758 \uD604\uC7AC \uD310\uB2E8\uACFC \uADFC\uAC70\uB97C \uBB38\uC11C\uD615 \uB9AC\uD3EC\uD2B8\uB85C \uD655\uC778\uD569\uB2C8\uB2E4.'],
+    action: ['\uC870\uAC74 \uC785\uB825', 'Action Planner', '\uC704\uD5D8 \uC131\uD5A5\uACFC \uAE30\uAC04\uC5D0 \uB9DE\uB294 \uC2E4\uD589 \uACC4\uD68D\uC744 \uC124\uACC4\uD569\uB2C8\uB2E4.'],
+    watch: ['\uC870\uAC74 \uC785\uB825', 'Watchlist Alerts', '\uC989\uC2DC \uB300\uC751 \uC5EC\uBD80\uC640 \uAD00\uCC30 \uD2B8\uB9AC\uAC70\uB97C \uC810\uAC80\uD558\uACE0 \uC800\uC7A5\uD569\uB2C8\uB2E4.'],
+  };
+  Object.entries(tabs).forEach(([service, values]) => {
+    const button = document.querySelector(`.service-tab[data-service="${service}"]`);
+    if (!button) return;
+    const spans = button.querySelectorAll('span');
+    if (spans[0]) spans[0].textContent = values[0];
+    const strong = button.querySelector('strong');
+    if (strong) strong.textContent = values[1];
+    if (spans[1]) spans[1].textContent = values[2];
+  });
+  const landing = {
+    market: ['\uC989\uC2DC \uC2E4\uD589', 'Market Regime', '\uC2DC\uC7A5 \uCCB4\uC81C, \uC139\uD130 \uB9F5, \uC8FC\uC694 \uB3D9\uC778\uC744 \uBC14\uD0D5\uC73C\uB85C \uC624\uB298\uC758 \uC2DC\uC7A5 \uB9E5\uB77D\uC744 \uBA3C\uC800 \uD655\uC778\uD569\uB2C8\uB2E4.', '\uBC14\uB85C \uC2E4\uD589'],
+    stock: ['\uBB38\uC11C\uD615 \uB9AC\uD3EC\uD2B8', 'Stock Decision', '\uAC1C\uBCC4 \uC885\uBAA9\uC758 \uC0C1\uC2B9\u00B7\uD558\uB77D \uC694\uC778, \uC774\uBCA4\uD2B8, \uC7AC\uBB34, \uAC70\uC2DC \uADFC\uAC70\uB97C \uAD6C\uC870\uC801\uC73C\uB85C \uD655\uC778\uD569\uB2C8\uB2E4.', '\uC870\uAC74 \uC785\uB825'],
+    action: ['\uC2E4\uD589 \uACC4\uD68D', 'Action Planner', '\uC2E0\uADDC \uC9C4\uC785, \uCD94\uAC00 \uB9E4\uC218, \uBCF4\uC720, \uCC28\uC775 \uC2E4\uD604 \uB4F1 \uD589\uB3D9 \uC2DC\uB098\uB9AC\uC624\uB97C \uC2E4\uD589 \uACC4\uD68D\uC73C\uB85C \uC815\uB9AC\uD569\uB2C8\uB2E4.', '\uC870\uAC74 \uC785\uB825'],
+    watch: ['\uBAA8\uB2C8\uD130\uB9C1', 'Watchlist Alerts', '\uC989\uC2DC \uB300\uC751 \uC5EC\uBD80\uB97C \uD655\uC778\uD558\uACE0, \uC800\uC7A5\uD615 \uC6CC\uCE58\uB9AC\uC2A4\uD2B8\uC5D0\uC11C \uC9C0\uC18D\uC801\uC73C\uB85C \uCD94\uC801\uD569\uB2C8\uB2E4.', '\uC870\uAC74 \uC785\uB825'],
+  };
+  Object.entries(landing).forEach(([service, values]) => {
+    const button = document.querySelector(`[data-landing-service="${service}"]`);
+    if (!button) return;
+    const card = button.closest('.service-card');
+    if (!card) return;
+    const kicker = card.querySelector('.service-kicker');
+    const title = card.querySelector('h3');
+    const desc = card.querySelector('.service-desc');
+    if (kicker) kicker.textContent = values[0];
+    if (title) title.textContent = values[1];
+    if (desc) desc.textContent = values[2];
+    button.textContent = values[3];
   });
 }
 
@@ -1986,7 +2672,7 @@ async function runMarket() {
   mountLoading('market');
   try {
     const data = await request('GET', '/api/v1/market-regime/overview');
-    mountReport('market', renderMarketReport(data));
+    storeServiceResult('market', data, renderMarketReport(data), 'Daily Market Regime');
   } catch (err) {
     mountError('market', err);
   }
@@ -2002,7 +2688,8 @@ async function runStock(form) {
   const url = `/api/v1/stock-decision/${encodeURIComponent(ticker)}${params.size ? `?${params.toString()}` : ''}`;
   try {
     const data = await request('GET', url);
-    mountReport('stock', renderStockReport(data));
+    const reportTitle = `${data.instrument_name || ticker} (${data.ticker || ticker})`;
+    storeServiceResult('stock', data, renderStockReport(data), reportTitle);
   } catch (err) {
     mountError('stock', err);
     throw err;
@@ -2023,7 +2710,8 @@ async function runAction(form) {
   };
   try {
     const data = await request('POST', '/api/v1/action-planner/analyze', body);
-    mountReport('action', renderActionReport(data));
+    const reportTitle = `${data.instrument_name || body.ticker_or_name} (${data.ticker || body.ticker_or_name})`;
+    storeServiceResult('action', data, renderActionReport(data), reportTitle);
   } catch (err) {
     mountError('action', err);
     throw err;
@@ -2040,7 +2728,8 @@ async function runWatch(form) {
   };
   try {
     const data = await request('POST', '/api/v1/watchlist-alerts/check', body);
-    mountReport('watch', renderWatchReport(data));
+    const reportTitle = `${data.instrument_name || body.ticker_or_name} (${data.ticker || body.ticker_or_name})`;
+    storeServiceResult('watch', data, renderWatchReport(data), reportTitle);
   } catch (err) {
     mountError('watch', err);
     throw err;
@@ -2081,46 +2770,29 @@ async function runBatch(url, body) {
 
 function bindLaunchers() {
   qs('#launch-market').addEventListener('click', runMarket);
-  qs('#launch-stock').addEventListener('click', () =>
-    openSheet({
-      kicker: 'Stock Decision',
-      title: '종목 판단 파라미터 입력',
-      templateId: '#tpl-stock-form',
-      submitLabel: '종목 판단 리포트 생성',
-      onSubmit: runStock,
-    })
-  );
-  qs('#launch-action').addEventListener('click', () =>
-    openSheet({
-      kicker: 'Action Planner',
-      title: '행동 계획 파라미터 입력',
-      templateId: '#tpl-action-form',
-      submitLabel: '행동 계획 리포트 생성',
-      onSubmit: runAction,
-    })
-  );
-  qs('#launch-watch').addEventListener('click', () =>
-    openSheet({
-      kicker: 'Watchlist Alerts',
-      title: '관찰 알림 점검 조건 입력',
-      templateId: '#tpl-watch-form',
-      submitLabel: '관찰 알림 리포트 생성',
-      onSubmit: runWatch,
-    })
-  );
-  qs('#launch-subscription').addEventListener('click', () =>
-    openSheet({
-      kicker: '저장형 워치리스트',
-      title: '관찰 종목 저장',
-      templateId: '#tpl-subscription-form',
-      submitLabel: '워치리스트 저장',
-      onSubmit: runSubscription,
-    })
-  );
+  qs('#launch-stock').addEventListener('click', () => setActiveService('stock'));
+  qs('#launch-action').addEventListener('click', () => setActiveService('action'));
+  qs('#launch-watch').addEventListener('click', () => setActiveService('watch'));
+  qs('#launch-subscription').addEventListener('click', () => setActiveService('watch', { panelMode: 'subscription' }));
+  qs('#control-reset').addEventListener('click', () => {
+    renderWorkspaceSummary(uiState.activeService);
+    showLanding();
+  });
+  [...document.querySelectorAll('[data-landing-service]')].forEach((button) => {
+    button.addEventListener('click', () => {
+      const service = button.getAttribute('data-landing-service');
+      if (!service) return;
+      if (service === 'market') {
+        runMarket();
+        return;
+      }
+      setActiveService(service);
+    });
+  });
   qs('#launch-preview').addEventListener('click', () =>
     openSheet({
-      kicker: 'Source Preview',
-      title: '소스 미리보기 파라미터 입력',
+      kicker: '수집 미리보기',
+      title: '미리보기 파라미터를 입력하세요',
       templateId: '#tpl-preview-form',
       submitLabel: '소스 미리보기 실행',
       onSubmit: runPreview,
@@ -2130,8 +2802,11 @@ function bindLaunchers() {
 
 function bindOperators() {
   qs('#refresh-health').addEventListener('click', refreshHealth);
+  qs('#logout-button')?.addEventListener('click', logoutSession);
   qs('#refresh-subscriptions').addEventListener('click', refreshSubscriptions);
-  qs('#toggle-admin').addEventListener('click', () => qs('#admin-body').classList.toggle('hidden'));
+  qs('#toggle-admin').addEventListener('click', openAdminDrawer);
+  qs('#admin-close').addEventListener('click', closeAdminDrawer);
+  qs('#admin-backdrop').addEventListener('click', closeAdminDrawer);
   qs('#sheet-close').addEventListener('click', closeSheet);
   qs('#sheet-backdrop').addEventListener('click', closeSheet);
   qs('#run-kind').addEventListener('click', () => runBatch('/api/v1/batch/kind/disclosures', { ticker_or_name: '005930', max_items: 3 }));
@@ -2140,6 +2815,24 @@ function bindOperators() {
   qs('#run-naver-headlines').addEventListener('click', () => runBatch('/api/v1/batch/naver/headlines', { max_items: 10 }));
   qs('#run-market-snapshot').addEventListener('click', () => runBatch('/api/v1/batch/market-regime-snapshot', { max_items: 1 }));
   document.addEventListener('click', (event) => {
+    const historyButton = event.target instanceof Element ? event.target.closest('[data-history-index]') : null;
+    if (historyButton) {
+      const index = Number(historyButton.getAttribute('data-history-index'));
+      const item = uiState.runHistory[index];
+      if (item) {
+        uiState.statusByService[item.service] = item.status || {};
+        if (item.html) {
+          uiState.reportHtmlByService[item.service] = item.html;
+        }
+        setActiveService(item.service);
+        renderWorkspaceSummary(item.service);
+        if (item.html) {
+          showReport(item.html);
+        }
+      }
+      return;
+    }
+
     const trigger = event.target instanceof Element ? event.target.closest('[data-headline-brief-id]') : null;
     if (!trigger) return;
     const detailId = trigger.getAttribute('data-headline-brief-id');
@@ -2147,18 +2840,20 @@ function bindOperators() {
     const item = headlineBriefStore.get(detailId);
     if (!item) return;
     openHtmlSheet({
-      kicker: 'Market Regime 헤드라인 상세',
-      title: `${item.section_label || item.section_key || '헤드라인'} 영향 상세`,
+      kicker: '마켓 리포트 헤드라인',
+      title: `${item.section_label || item.section_key || '헤드라인'} 상세`,
       html: renderHeadlineBriefDetail(item),
     });
   });
 }
 
-function boot() {
+async function boot() {
   bindLaunchers();
   bindOperators();
-  refreshHealth();
-  refreshSubscriptions();
+  renderRunHistory();
+  localizeShell();
+  setActiveService('market', { showLanding: true });
+  await Promise.allSettled([refreshAuthUser(), refreshHealth(), refreshSubscriptions()]);
 }
 
 if (document.readyState === 'loading') {
@@ -2166,3 +2861,16 @@ if (document.readyState === 'loading') {
 } else {
   boot();
 }
+
+
+
+
+
+
+
+
+
+
+
+
+

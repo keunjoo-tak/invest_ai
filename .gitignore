@@ -15,7 +15,8 @@ env/
 *.pem
 *.key
 *credentials*.json
-pjt-dev-hdegis-app-*.json
+investai-*.json
+pjt-dev*.json
 
 # Local databases / artifacts
 *.db
@@ -46,7 +47,10 @@ Thumbs.db
 # Project local temp/runtime
 .tmp/
 tmp/
+instruction/tmp.txt
 logs/
 *.log
 pytest-cache-files-*/
 downloads/
+tools/
+.gcloud

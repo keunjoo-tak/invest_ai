@@ -5,7 +5,7 @@ from app.services.signal.scorer import evaluate_signal
 
 
 def test_signal_scorer_bullish_case() -> None:
-    """?? ??? ??? ????? ???? ?? ??? ????? ????."""
+    """강한 가격·이벤트·재무 조합에서 시그널 점수가 충분히 높게 형성되는지 검증한다."""
     features = MarketFeatureSet(
         as_of_date=date.today(),
         close=110.0,
@@ -49,7 +49,7 @@ def test_signal_scorer_bullish_case() -> None:
 
 
 def test_signal_scorer_risk_case() -> None:
-    """??? ?? ??? ?? ?? ?? ?? ??? ????? ????."""
+    """약한 가격 흐름과 높은 재무 리스크에서 경고 플래그가 생성되는지 검증한다."""
     features = MarketFeatureSet(
         as_of_date=date.today(),
         close=90.0,

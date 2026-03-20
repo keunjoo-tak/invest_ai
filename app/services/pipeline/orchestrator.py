@@ -335,6 +335,14 @@ class AnalysisPipeline:
         news = enrich_news_records(news, llm_signals)
         disclosure_scores = disclosure_stage["scores"]
         disclosures = enrich_disclosure_records(disclosures, llm_signals, disclosure_scores)
+        disclosure_lookup = {str(row.get("title") or ""): row for row in disclosures}
+        for score in disclosure_scores:
+            row = disclosure_lookup.get(str(score.get("title") or ""))
+            if not row:
+                continue
+            score["url"] = row.get("url", "")
+            score["published_at"] = row.get("publish_time_utc")
+            score["source"] = "disclosure"
         macro_rows = enrich_macro_rows(macro_rows, llm_signals)
         self.archive.save_json(
             call_dir,

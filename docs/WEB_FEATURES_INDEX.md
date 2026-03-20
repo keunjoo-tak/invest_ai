@@ -1,29 +1,17 @@
-# 웹 서비스 문서 인덱스
+# 웹 기능 문서 인덱스
 
-현재 웹 서비스는 사용자 제품 4개와 운영자 도구 2개로 구성됩니다.
+## 1. 사용자 화면
+- `FEATURE_DASHBOARD.md`: 현재 웹 화면의 정보 구조와 레이아웃을 설명합니다.
+- `FEATURE_MARKET_REGIME.md`: `Market Regime` 리포트의 목적, 입력, 출력, 활용 데이터를 설명합니다.
+- `FEATURE_STOCK_DECISION.md`: `Stock Decision` 리포트의 구조와 판단 근거를 설명합니다.
+- `FEATURE_ACTION_PLANNER.md`: `Action Planner`의 입력 조건과 행동 계획 리포트 구조를 설명합니다.
+- `FEATURE_WATCHLIST_ALERTS.md`: `Watchlist Alerts`의 점검 로직과 저장형 구독 기능을 설명합니다.
 
-## 사용자 제품
-- `FEATURE_DASHBOARD.md`
-  - 전체 대시보드 구조와 사용 흐름
-- `FEATURE_MARKET_REGIME.md`
-  - 시장 체제 리포트
-- `FEATURE_STOCK_DECISION.md`
-  - 종목 통합 판단 리포트
-- `FEATURE_ACTION_PLANNER.md`
-  - 실행 계획 리포트
-- `FEATURE_WATCHLIST_ALERTS.md`
-  - 즉시 점검 및 저장형 워치리스트
+## 2. 운영자 기능
+- `FEATURE_CRAWL_PREVIEW.md`: 원천 데이터 미리보기 기능을 설명합니다.
+- `FEATURE_BATCH_EXECUTION.md`: 배치 실행 화면과 배치 종류를 설명합니다.
+- `FEATURE_ANALYZE_TICKER.md`: 공통 분석 엔진 엔드포인트를 설명합니다.
 
-## 운영자 도구
-- `FEATURE_CRAWL_PREVIEW.md`
-  - 소스 미리보기
-- `FEATURE_BATCH_EXECUTION.md`
-  - 배치 실행과 시장 체제 스냅샷
-
-## 분석 엔진
-- `FEATURE_ANALYZE_TICKER.md`
-  - 공통 분석 엔진과 데이터 결합 구조
-
-## 인수인계
-- `HANDOVER_FUNCTIONS.md`
-  - 현재 코드 기준 핵심 모듈, 함수, 클래스, 처리 흐름
+## 3. 공통 문서
+- `DATA.md`: 현재 수집·관리하는 데이터의 출처와 활용 방법을 정리합니다.
+- `HANDOVER_FUNCTIONS.md`: 인수인계 관점에서 핵심 함수와 리포트 계산 로직을 설명합니다.

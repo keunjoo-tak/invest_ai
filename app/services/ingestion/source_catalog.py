@@ -36,6 +36,13 @@ SOURCE_CATALOG: list[SourceCatalogItem] = [
     SourceCatalogItem("S38", "IMF DataMapper API", "International Macro", "https://www.imf.org/external/datamapper/", "api", False),
     SourceCatalogItem("S39", "Eurostat API", "Europe Macro", "https://ec.europa.eu/eurostat/api/", "api", False),
     SourceCatalogItem("S40", "Naver News Section Headlines", "Domestic Headline News", "https://news.naver.com", "crawler", True),
+    SourceCatalogItem("S41", "Samsung Securities Research", "Domestic Broker Research", "https://www.samsungpop.com/sscommon/jsp/search/research/research_pop.jsp", "crawler", True),
+    SourceCatalogItem("S42", "KB Financial Research", "Domestic Bank Research", "https://www.kbfg.com/kbresearch/report/reportList.do", "crawler", True),
+    SourceCatalogItem("S43", "Hana Institute of Finance", "Domestic Bank Research", "https://www.hanaif.re.kr/boardList.do?menuId=&tabMenuId=MN2100", "crawler", True),
+    SourceCatalogItem("S44", "Woori Financial Research Institute", "Domestic Bank Research", "https://www.wfri.re.kr/ko/mo/research_report/research_report.php", "crawler", True),
+    SourceCatalogItem("S45", "UBS CIO Insights", "Global Public Research", "https://www.ubs.com/global/en/wealthmanagement/insights.html", "crawler", True),
+    SourceCatalogItem("S46", "BlackRock BII Outlook", "Global Public Research", "https://www.blackrock.com/us/individual/insights/blackrock-investment-institute/outlook", "crawler", True),
+    SourceCatalogItem("S47", "PIMCO Insights", "Global Public Research", "https://www.pimco.com/us/en/insights", "crawler", True),
 ]
 
 

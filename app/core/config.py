@@ -14,9 +14,20 @@ class Settings(BaseSettings):
     app_env: str = "dev"
     api_prefix: str = "/api/v1"
     timezone: str = "Asia/Seoul"
+    server_host: str = Field(default="0.0.0.0", alias="SERVER_HOST")
+    server_port: int = Field(default=5000, alias="SERVER_PORT")
+    cors_allowed_origins_raw: str = Field(default="", alias="CORS_ALLOWED_ORIGINS")
+    trusted_hosts_raw: str = Field(default="", alias="TRUSTED_HOSTS")
+    auth_enabled: bool = Field(default=False, alias="AUTH_ENABLED")
+    auth_username: str = Field(default="investai", alias="AUTH_USERNAME")
+    auth_password: str = Field(default="change-me", alias="AUTH_PASSWORD")
+    auth_secret_key: str = Field(default="investai-dev-session-secret", alias="AUTH_SECRET_KEY")
+    auth_session_max_age_seconds: int = Field(default=43200, alias="AUTH_SESSION_MAX_AGE_SECONDS")
     default_market: str = "KR"
     default_lookback_days: int = 365
     downloads_dir: str = Field(default="downloads", alias="DOWNLOADS_DIR")
+    enable_scheduler: bool = Field(default=True, alias="ENABLE_SCHEDULER")
+    scheduler_shared_secret: str = Field(default="", alias="SCHEDULER_SHARED_SECRET")
 
     database_url: str = Field(
         default="postgresql+psycopg://investai:investai@localhost:5432/investai",
@@ -24,10 +35,14 @@ class Settings(BaseSettings):
     )
 
     google_application_credentials: str = Field(
-        default="pjt-dev-hdegis-app-454401-b7c65a0d9543.json",
+        default="investai-490800-3ec1fb014116.json",
         alias="GOOGLE_APPLICATION_CREDENTIALS",
     )
-    gemini_project_id: str = Field(default="pjt-dev-hdegis-app-454401", alias="GEMINI_PROJECT_ID")
+    gemini_google_application_credentials: str = Field(
+        default="pjt-dev-hdetrf-app-454403-db50d7f5f575.json",
+        alias="GEMINI_GOOGLE_APPLICATION_CREDENTIALS",
+    )
+    gemini_project_id: str = Field(default="pjt-dev-hdetrf-app-454403", alias="GEMINI_PROJECT_ID")
     gemini_location: str = Field(default="us-central1", alias="GEMINI_LOCATION")
     gemini_model: str = Field(default="gemini-2.5-pro", alias="GEMINI_MODEL")
     gemini_enabled: bool = Field(default=True, alias="GEMINI_ENABLED")
@@ -64,9 +79,22 @@ class Settings(BaseSettings):
     eurostat_api_key: str = Field(default="", alias="EUROSTAT_API_KEY")
     x_bearer_token: str = Field(default="", alias="X_BEARER_TOKEN")
 
-    def credentials_path(self) -> Path:
-        """Return the ADC credential file path."""
+    def deploy_credentials_path(self) -> Path:
+        """Return the deployment ADC credential file path."""
         return Path(self.google_application_credentials).resolve()
+
+    def gemini_credentials_path(self) -> Path:
+        """Return the Gemini ADC credential file path."""
+        value = self.gemini_google_application_credentials or self.google_application_credentials
+        return Path(value).resolve()
+
+    def cors_allowed_origins(self) -> list[str]:
+        """Return the configured CORS origins."""
+        return [item.strip() for item in self.cors_allowed_origins_raw.split(",") if item.strip()]
+
+    def trusted_hosts(self) -> list[str]:
+        """Return the configured trusted hosts."""
+        return [item.strip() for item in self.trusted_hosts_raw.split(",") if item.strip()]
 
 
 @lru_cache

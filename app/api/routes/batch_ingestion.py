@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.schemas.batch_ingestion import BatchIngestionResponse, GenericBatchRequest, KindBatchRequest
+from app.schemas.batch_ingestion import BatchIngestionResponse, GenericBatchRequest, KindBatchRequest, ResearchBatchRequest
 from app.services.ingestion.batch_ingestor import BatchIngestor
 
 router = APIRouter(prefix='/batch', tags=['batch-ingestion'])
@@ -19,6 +19,16 @@ ingestor = BatchIngestor()
 )
 def run_kind_disclosures(req: KindBatchRequest, db: Session = Depends(get_db)) -> BatchIngestionResponse:
     return ingestor.ingest_kind_disclosures(db=db, ticker_or_name=req.ticker_or_name, max_items=req.max_items)
+
+
+@router.post(
+    '/research/public-reports',
+    response_model=BatchIngestionResponse,
+    summary='공개 리서치 문서 배치 수집',
+    description='국내 증권사·은행 연구소와 글로벌 공개형 하우스 리포트를 수집하고 정제한 뒤 적재합니다.',
+)
+def run_public_research_reports(req: ResearchBatchRequest, db: Session = Depends(get_db)) -> BatchIngestionResponse:
+    return ingestor.ingest_public_research_reports(db=db, max_items=req.max_items, group=req.group)
 
 
 @router.post(

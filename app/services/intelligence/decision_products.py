@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
 import logging
-from statistics import mean
+from statistics import mean, pstdev
 from threading import Lock
 from typing import Any
 
@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.db.models import Instrument, WatchlistSubscription
+from app.db.models import ExternalDocument, Instrument, WatchlistSubscription
 from app.schemas.analysis import AnalyzeTickerRequest, AnalyzeTickerResponse
 from app.schemas.decision_products import (
     ActionPlannerRequest,
@@ -25,6 +25,7 @@ from app.schemas.decision_products import (
     WatchlistSubscriptionResponse,
 )
 from app.services.alerts.formatter import format_alert_message
+from app.services.ingestion.research_repair import ResearchDocumentRepairService
 from app.services.intelligence.market_pulse import MarketPulseEngine
 from app.services.intelligence.snapshot_store import ProductSnapshotStore
 from app.services.localization.signal_localizer import has_risk_flag
@@ -38,6 +39,7 @@ class DecisionProductService:
         self.pipeline = AnalysisPipeline()
         self.market = MarketPulseEngine()
         self.snapshot_store = ProductSnapshotStore()
+        self.research_repair = ResearchDocumentRepairService()
         self._ttl_seconds = max(60, get_settings().product_cache_ttl_seconds)
         self._snapshot_ttl_seconds = max(self._ttl_seconds, 6 * 60 * 60)
         self._cache_lock = Lock()
@@ -251,6 +253,8 @@ class DecisionProductService:
                     'published_at': published_at,
                     'title': item.get('title') or '',
                     'summary': item.get('summary') or '',
+                    'url': item.get('url') or '',
+                    'local_doc_dir': item.get('local_doc_dir') or '',
                 }
             )
         return timeline
@@ -390,6 +394,126 @@ class DecisionProductService:
             summary.append(f'{regime.regime}: 현재는 종목 개별 재료보다 시장 변수 영향이 더 크게 작용하는 구간입니다.')
         return summary[:5]
 
+    def _load_research_consensus(self, db: Session, analysis: AnalyzeTickerResponse) -> tuple[dict[str, Any], list[str], list[str], list[str], list[dict[str, Any]]]:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=90)
+        stmt = (
+            select(ExternalDocument)
+            .where(ExternalDocument.source_system == 'PUBLIC_RESEARCH_REPORTS')
+            .order_by(ExternalDocument.publish_time_utc.desc(), ExternalDocument.created_at_utc.desc())
+            .limit(80)
+        )
+        rows = db.execute(stmt).scalars().all()
+        sector_name = str((analysis.explanation.get('sector_momentum') or {}).get('sector') or '')
+        matched: list[dict[str, Any]] = []
+        for row in rows:
+            row = self.research_repair.ensure_document_ready(db, row)
+            current_at = row.publish_time_utc or row.created_at_utc
+            if current_at and current_at.tzinfo is None:
+                current_at = current_at.replace(tzinfo=timezone.utc)
+            if current_at and current_at < cutoff:
+                continue
+            meta = row.metadata_json if isinstance(row.metadata_json, dict) else {}
+            if 'stock_decision' not in list(meta.get('service_targets') or ['stock_decision']):
+                continue
+            ticker_tags = {str(x) for x in list(meta.get('ticker_tags') or []) if x}
+            company_tags = {str(x) for x in list(meta.get('company_tags') or []) if x}
+            sector_tags = {str(x) for x in list(meta.get('sector_tags') or []) if x}
+            ticker_match = analysis.ticker in ticker_tags
+            company_match = analysis.instrument_name in company_tags
+            sector_match = bool(sector_name) and sector_name in sector_tags
+            if not (ticker_match or company_match or sector_match):
+                continue
+            scores = meta.get('research_scores') if isinstance(meta.get('research_scores'), dict) else {}
+            weight = max(
+                0.1,
+                float(scores.get('freshness_score') or 0.4) * 0.40
+                + float(scores.get('house_quality_score') or meta.get('house_quality_score') or 0.75) * 0.30
+                + float(meta.get('feature_confidence') or 0.55) * 0.20
+                + (0.10 if (ticker_match or company_match) else 0.05),
+            )
+            matched.append(
+                {
+                    'row': row,
+                    'meta': meta,
+                    'scores': scores,
+                    'weight': round(weight, 3),
+                    'ticker_match': ticker_match or company_match,
+                    'sector_match': sector_match,
+                }
+            )
+
+        if not matched:
+            return ({
+                'recommendation_score': 0.0,
+                'dispersion_score': 0.0,
+                'target_price_upside_pct': 0.0,
+                'target_price_revision_score': 0.0,
+                'industry_tailwind_score': 0.0,
+                'industry_headwind_score': 0.0,
+                'catalyst_near_term_score': 0.0,
+                'thesis_positive_score': 0.0,
+                'thesis_negative_score': 0.0,
+                'matched_doc_count': 0,
+            }, [], [], [], [])
+
+        company_rows = [item for item in matched if item['ticker_match']]
+        sector_rows = [item for item in matched if item['sector_match']]
+
+        def _wavg(name: str, rows_to_use: list[dict[str, Any]]) -> float:
+            if not rows_to_use:
+                return 0.0
+            total = sum(float(item['weight']) for item in rows_to_use) or 1.0
+            return round(sum(float(item['scores'].get(name) or 0.0) * float(item['weight']) for item in rows_to_use) / total, 3)
+
+        rec_samples = [float(item['scores'].get('company_recommendation_score') or 0.0) for item in company_rows]
+        consensus = {
+            'recommendation_score': _wavg('company_recommendation_score', company_rows or matched),
+            'dispersion_score': round(pstdev(rec_samples), 3) if len(rec_samples) >= 2 else 0.0,
+            'target_price_upside_pct': round(
+                (
+                    sum(float(item['meta'].get('price_upside_pct') or 0.0) * float(item['weight']) for item in company_rows if item['meta'].get('price_upside_pct') not in {None, ''})
+                    / (sum(float(item['weight']) for item in company_rows if item['meta'].get('price_upside_pct') not in {None, ''}) or 1.0)
+                ),
+                2,
+            ) if company_rows else 0.0,
+            'target_price_revision_score': _wavg('target_price_revision_score', company_rows),
+            'industry_tailwind_score': _wavg('industry_tailwind_score', sector_rows or matched),
+            'industry_headwind_score': _wavg('industry_headwind_score', sector_rows or matched),
+            'catalyst_near_term_score': _wavg('catalyst_near_term_score', matched),
+            'thesis_positive_score': _wavg('thesis_positive_score', matched),
+            'thesis_negative_score': _wavg('thesis_negative_score', matched),
+            'matched_doc_count': len(matched),
+        }
+        bullish = []
+        bearish = []
+        checkpoints = []
+        evidence_docs: list[dict[str, Any]] = []
+        for item in sorted(matched, key=lambda row: (row['ticker_match'], row['weight']), reverse=True)[:6]:
+            meta = item['meta']
+            summary = item['row'].summary_json if isinstance(item['row'].summary_json, dict) else {}
+            stance = str(meta.get('stance') or 'neutral')
+            house = str(meta.get('house_name') or item['row'].source_id)
+            snippet = str(summary.get('summary') or meta.get('evidence_snippet') or item['row'].title)
+            if stance == 'positive' and snippet:
+                bullish.append(f'{house}: {snippet[:90]}')
+            elif stance == 'negative' and snippet:
+                bearish.append(f'{house}: {snippet[:90]}')
+            evidence_docs.append(
+                {
+                    'house_name': house,
+                    'report_type': meta.get('report_type') or item['row'].category,
+                    'stance': stance,
+                    'title': item['row'].title,
+                    'summary': snippet,
+                    'published_at_utc': item['row'].publish_time_utc or item['row'].created_at_utc,
+                    'url': item['row'].url,
+                    'weight': item['weight'],
+                }
+            )
+            for bullet in list(meta.get('catalyst_bullets') or [])[:1]:
+                checkpoints.append(f'{house}: {bullet}')
+        return consensus, bullish[:3], bearish[:3], checkpoints[:3], evidence_docs[:6]
+
     def _bullish_factors(self, analysis: AnalyzeTickerResponse) -> list[str]:
         positives = [reason.description for reason in analysis.signal.reasons if reason.score_contribution > 0]
         docs = [str(item.get('summary') or item.get('title') or '') for item in analysis.explanation.get('document_summaries', [])]
@@ -479,6 +603,7 @@ class DecisionProductService:
             strategy_hints=base.strategy_hints,
             representative_symbols=base.representative_symbols,
             headline_news_briefs=base.headline_news_briefs,
+            research_briefs=base.research_briefs,
             pipeline_status=self._pipeline_status(
                 'live_collection',
                 'quick',
@@ -507,6 +632,7 @@ class DecisionProductService:
             strategy_hints=base.strategy_hints,
             representative_symbols=base.representative_symbols,
             headline_news_briefs=base.headline_news_briefs,
+            research_briefs=base.research_briefs,
             pipeline_status=self._pipeline_status(
                 'batch_snapshot',
                 'batch_snapshot',
@@ -545,8 +671,19 @@ class DecisionProductService:
 
         analysis = await self.run_core_analysis(db, normalized, as_of_date, lookback_days, notify=False, force_send=False)
         regime = await self.build_market_regime(as_of_date, db=db)
+        research_consensus, research_bulls, research_bears, research_checkpoints, research_evidence_docs = self._load_research_consensus(db, analysis)
         components = self._component_scores(analysis)
         horizons = self._horizon_scores(analysis, components)
+        if int(research_consensus.get('matched_doc_count') or 0) > 0:
+            research_company_component = self._clip(50 + float(research_consensus.get('recommendation_score') or 0.0) * 22 + float(research_consensus.get('target_price_upside_pct') or 0.0) * 0.35 + float(research_consensus.get('target_price_revision_score') or 0.0) * 15 + float(research_consensus.get('thesis_positive_score') or 0.0) * 18 - float(research_consensus.get('thesis_negative_score') or 0.0) * 16 - float(research_consensus.get('dispersion_score') or 0.0) * 12)
+            research_industry_component = self._clip(50 + float(research_consensus.get('industry_tailwind_score') or 0.0) * 20 - float(research_consensus.get('industry_headwind_score') or 0.0) * 18 + float(research_consensus.get('catalyst_near_term_score') or 0.0) * 14)
+            components['stock_specific_score'] = self._clip((components['stock_specific_score'] * 0.85) + (research_company_component * 0.15))
+            components['sector_score'] = self._clip((components['sector_score'] * 0.85) + (research_industry_component * 0.15))
+            horizons = {
+                'short_term_score': self._clip(horizons['short_term_score'] * 0.90 + (50 + float(research_consensus.get('catalyst_near_term_score') or 0.0) * 35 - float(research_consensus.get('thesis_negative_score') or 0.0) * 20) * 0.10),
+                'swing_score': self._clip(horizons['swing_score'] * 0.70 + research_company_component * 0.20 + research_industry_component * 0.10),
+                'midterm_score': self._clip(horizons['midterm_score'] * 0.70 + research_company_component * 0.20 + research_industry_component * 0.10),
+            }
         composite = mean([horizons['short_term_score'], horizons['swing_score'], horizons['midterm_score']])
         volatility_mode = has_risk_flag(analysis.signal, 'EVENT_DAY_VOLATILITY_MODE')
         conclusion = '관찰'
@@ -560,7 +697,14 @@ class DecisionProductService:
             conclusion = '관찰'
 
         sector_momentum = dict(analysis.explanation.get('sector_momentum') or {})
-        sector_momentum = dict(analysis.explanation.get('sector_momentum') or {})
+        research_summary = []
+        if int(research_consensus.get('matched_doc_count') or 0) > 0:
+            research_summary = [
+                f"최근 리서치 추천 점수 {float(research_consensus.get('recommendation_score') or 0.0):.2f}",
+                f"평균 목표가 상승여력 {float(research_consensus.get('target_price_upside_pct') or 0.0):.1f}%",
+                f"산업 tailwind 점수 {float(research_consensus.get('industry_tailwind_score') or 0.0):.2f}",
+                f"가까운 촉매 점수 {float(research_consensus.get('catalyst_near_term_score') or 0.0):.2f}",
+            ]
         response = StockDecisionResponse(
             ticker=analysis.ticker,
             instrument_name=analysis.instrument_name,
@@ -579,9 +723,9 @@ class DecisionProductService:
             stock_specific_score=components['stock_specific_score'],
             event_score=components['event_score'],
             valuation_score=components['valuation_score'],
-            bullish_factors=self._bullish_factors(analysis),
-            bearish_factors=self._bearish_factors(analysis),
-            change_triggers=self._change_triggers(analysis),
+            bullish_factors=(research_bulls + self._bullish_factors(analysis))[:5],
+            bearish_factors=(research_bears + self._bearish_factors(analysis))[:5],
+            change_triggers=(research_checkpoints + self._change_triggers(analysis))[:5],
             recent_timeline=self._timeline(analysis),
             sector_name=sector_momentum.get('sector'),
             sector_leader_ticker=sector_momentum.get('leader_ticker'),
@@ -594,6 +738,9 @@ class DecisionProductService:
             sector_peer_snapshot=self._sector_peer_snapshot(analysis),
             financial_summary=self._financial_summary(analysis),
             policy_macro_summary=self._macro_summary(regime, analysis) + self._event_pattern_summary(analysis),
+            research_consensus=research_consensus,
+            research_summary=research_summary,
+            research_evidence_docs=research_evidence_docs,
             source_analysis=analysis,
             pipeline_status=self._pipeline_status(
                 'live_collection',

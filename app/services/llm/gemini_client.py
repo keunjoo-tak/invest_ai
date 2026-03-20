@@ -30,7 +30,7 @@ class GeminiClient:
 
     def _generate_json(self, prompt: str, payload: dict[str, Any], temperature: float = 0.1) -> dict[str, Any]:
         """Gemini로 JSON 응답을 생성한다."""
-        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = str(self.settings.credentials_path())
+        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = str(self.settings.gemini_credentials_path())
         from google import genai
         from google.genai import types
 
@@ -55,37 +55,17 @@ class GeminiClient:
         if not self.settings.gemini_enabled:
             return self._fallback_explanation(signal)
 
+        payload = {"ticker": ticker, "signal": signal, "features": features}
         prompt = (
             "역할: 투자자용 신호 설명을 생성하라(매매 지시 금지).\n"
             "규칙: JSON 객체만 반환하고, 키 구조를 유지한다.\n"
             "필드: summary_short, bull_points, bear_points, risk_factors, check_before_order, confidence.\n"
-            "언어: 한국어.\n"
-        )
-        payload = {"ticker": ticker, "signal": signal, "features": features}
-        try:
-            return self._generate_json(prompt=prompt, payload=payload, temperature=0.1)
-        except Exception:
-            return self._fallback_explanation(signal)
-
-    def translate_json_to_korean(self, payload: dict[str, Any]) -> dict[str, Any]:
-        """JSON 값을 한국어로 번역한다.
-
-        키 이름/숫자/불리언/날짜 형태는 유지하고, 사람이 읽는 문자열 값만 한국어로 번역한다.
-        """
-        if not self.settings.gemini_enabled:
-            return payload
-
-        prompt = (
-            "역할: 입력 JSON을 한국어로 번역하라.\n"
-            "규칙:\n"
-            "1) JSON 구조/키 이름/숫자/불리언/날짜/티커 코드는 변경하지 않는다.\n"
-            "2) 사람이 읽는 영어 문자열 값만 자연스러운 한국어로 번역한다.\n"
-            "3) JSON 객체만 반환한다.\n"
+            "언어: 한국어. 과장된 표현과 투자권유 표현은 금지한다.\n"
         )
         try:
             return self._generate_json(prompt=prompt, payload=payload, temperature=0.0)
         except Exception:
-            return payload
+            return self._fallback_explanation(signal)
 
     def summarize_documents(self, documents: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """문서 리스트를 요약한다.
@@ -186,7 +166,7 @@ class GeminiClient:
             return []
 
     def _fallback_material_disclosure_scores(self, documents: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """LLM? ??? ? ?? ? ??? ?? ?? ??? ????."""
+        """LLM 장애 시 사용할 수시공시 규칙 기반 점수화 fallback."""
         docs = [x for x in documents if (x.get("title") or x.get("content_text"))][:6]
         out: list[dict[str, Any]] = []
         for doc in docs:
@@ -195,23 +175,23 @@ class GeminiClient:
             bearish = 0.10
             label = "general"
             rationale: list[str] = []
-            if any(token in text for token in ["????", "??", "contract", "??", "????"]):
+            if any(token in text for token in ["공급계약", "계약체결", "수주", "contract", "order"]):
                 bullish += 0.55
                 label = "supply_contract"
-                rationale.append("???? ?? ?? ??? ??? ???????.")
-            if any(token in text for token in ["????", "cb", "bw", "????", "????????", "????", "financing"]):
+                rationale.append("공급계약이나 수주 성격의 공시로 매출 가시성을 높일 수 있습니다.")
+            if any(token in text for token in ["유상증자", "cb", "bw", "전환사채", "신주인수권부사채", "자금조달", "financing"]):
                 bearish += 0.65
                 label = "financing"
-                rationale.append("?? ?? ???? ?? ???? ?? ??? ???????.")
-            if any(token in text for token in ["???", "??", "??", "????", "share buyback"]):
+                rationale.append("희석 또는 자금조달 부담을 높일 수 있는 공시로 해석했습니다.")
+            if any(token in text for token in ["배당", "자사주", "소각", "자기주식", "share buyback"]):
                 bullish += 0.35
                 label = "shareholder_return"
-                rationale.append("???? ??? ??? ???????.")
-            if any(token in text for token in ["??", "??", "??", "????", "????"]):
+                rationale.append("주주환원 성격이 있어 투자심리에 우호적일 수 있습니다.")
+            if any(token in text for token in ["소송", "횡령", "배임", "부도", "회생"]):
                 bearish += 0.45
                 label = "legal_or_distress"
-                rationale.append("?? ?? ?? ???? ??? ???????.")
-            severity = min(1.0, max(bullish, bearish) + (0.15 if "??" in text or "??" in text else 0.0))
+                rationale.append("법률 또는 재무 스트레스 성격의 공시로 판단했습니다.")
+            severity = min(1.0, max(bullish, bearish) + (0.15 if "유상증자" in text or "전환사채" in text else 0.0))
             bullish = round(min(1.0, bullish), 3)
             bearish = round(min(1.0, bearish), 3)
             out.append(
@@ -222,13 +202,13 @@ class GeminiClient:
                     "bearish_score": bearish,
                     "net_score": round(max(-1.0, min(1.0, bullish - bearish)), 3),
                     "event_severity": round(severity, 3),
-                    "rationale": " ".join(rationale) or "?? ?? ?? ?? ?? ?????.",
+                    "rationale": " ".join(rationale) or "공시 유형을 기준으로 규칙 기반 점수화를 적용했습니다.",
                 }
             )
         return out
 
     def score_material_disclosures(self, documents: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """????? ??/?? ??? ?????."""
+        """수시공시의 호재·악재 점수를 계산한다."""
         docs = [x for x in documents if (x.get("title") or x.get("content_text"))][:6]
         if not docs:
             return []
@@ -236,13 +216,13 @@ class GeminiClient:
             return self._fallback_material_disclosure_scores(docs)
 
         prompt = (
-            "??: ?? ??? ????? ?? ??? ?? ??? ????.\n"
-            "??:\n"
-            "1) ? ???? title, event_label, bullish_score, bearish_score, net_score, event_severity, rationale ??? ????.\n"
-            "2) bullish_score? bearish_score? 0~1, net_score? -1~1, event_severity? 0~1 ??? ????.\n"
-            "3) ?? ???, ?? ??, ????, ????????, ????? ?? ??? ???.\n"
-            "4) ??? ????, ?? ??, ?? ??, ????? ?? ??? ???.\n"
-            "5) JSON ??? ????.\n"
+            "역할: 상장사 수시공시를 투자 영향 관점으로 점수화하는 분석가.\n"
+            "규칙:\n"
+            "1) 각 문서마다 title, event_label, bullish_score, bearish_score, net_score, event_severity, rationale 필드를 반환한다.\n"
+            "2) bullish_score와 bearish_score는 0~1, net_score는 -1~1, event_severity는 0~1 범위를 사용한다.\n"
+            "3) 공급계약, 실적, 자금조달, 주주환원, 지배구조, 법률/부실 이슈를 우선 분류한다.\n"
+            "4) 희석성 자금조달, 소송, 회계/지배구조 리스크는 보수적으로 평가한다.\n"
+            "5) JSON 배열만 반환한다.\n"
         )
         try:
             res = self._generate_json(prompt=prompt, payload={"documents": docs}, temperature=0.0)

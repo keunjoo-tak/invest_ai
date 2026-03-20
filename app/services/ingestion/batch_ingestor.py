@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import re
 import uuid
 import xml.etree.ElementTree as ET
@@ -27,6 +28,8 @@ from app.services.ingestion.preprocessing import (
 )
 from app.services.ingestion.providers import SourceProviderClient
 from app.services.ingestion.raw_archive import RawArchiveManager
+from app.services.ingestion.research_normalizer import classify_research_report_type, normalize_research_document
+from app.services.ingestion.research_profiles import ResearchSourceProfile, get_research_profiles
 from app.services.llm.gemini_client import GeminiClient
 from app.services.intelligence.decision_products import DecisionProductService
 
@@ -216,6 +219,304 @@ class BatchIngestor:
         except Exception:
             return None
 
+    def _extract_generic_attachment_links(self, base_url: str, html: str) -> list[dict[str, str]]:
+        files: list[dict[str, str]] = []
+        seen: set[str] = set()
+        for href, label in re.findall(r'(?is)<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', html or ''):
+            href = href.replace('&amp;', '&')
+            if not re.search(r'\.(pdf|hwp|docx?)($|\?)|/FileDown\.do|/download', href, re.I):
+                continue
+            url = urljoin(base_url, href)
+            if url in seen:
+                continue
+            seen.add(url)
+            files.append({'url': url, 'title': html_cleaner(label)[:200]})
+
+        kb_matches = re.findall(
+            r"(?is)<a[^>]+href=[\"']javascript:\s*fn_downFile\(\'([^\']+)\',\'([^\']+)\'\)[^\"']*[\"'][^>]*>(.*?)</a>",
+            html or '',
+        )
+        for atch_file_id, file_sn, label in kb_matches:
+            url = urljoin(base_url, f'/kbresearch/cmm/fms/FileDown.do?atchFileId={atch_file_id}&fileSn={file_sn}')
+            if url in seen:
+                continue
+            seen.add(url)
+            files.append({'url': url, 'title': html_cleaner(label)[:200]})
+        return files[:6]
+
+    def _extract_first_heading(self, html: str) -> str:
+        for pattern in [r'(?is)<h1[^>]*>(.*?)</h1>', r'(?is)<h2[^>]*>(.*?)</h2>', r'(?is)<h3[^>]*>(.*?)</h3>']:
+            match = re.search(pattern, html or '')
+            if match:
+                title = html_cleaner(match.group(1))
+                if title:
+                    return title[:300]
+        return ''
+
+    def _extract_research_html_page(self, url: str, title_hint: str = '') -> dict[str, Any] | None:
+        try:
+            resp = self._http_get(url)
+            html = resp.text
+            title = title_hint or self._extract_meta_content(html, 'og:title') or self._extract_meta_content(html, 'title') or self._extract_first_heading(html)
+            body = self._extract_content_block(
+                html,
+                [
+                    r'(?is)<div[^>]+class=["\'][^"\']*details__body[^"\']*["\'][^>]*>(.*?)</div>\s*<div[^>]+class=["\'][^"\']*details__tag',
+                    r'(?is)<div[^>]+class=["\'][^"\']*details__body[^"\']*["\'][^>]*>(.*?)</div>',
+                    r'(?is)<div[^>]+class=["\'][^"\']*view_cont[^"\']*["\'][^>]*>(.*?)</div>',
+                    r'(?is)<div[^>]+class=["\'][^"\']*article_txt[^"\']*["\'][^>]*>(.*?)</div>',
+                    r'(?is)<div[^>]+class=["\'][^"\']*editor-view[^"\']*["\'][^>]*>(.*?)</div>',
+                    r'(?is)<article[^>]*>(.*?)</article>',
+                    r'(?is)<main[^>]*>(.*?)</main>',
+                ],
+            )
+            if not body:
+                body = html_cleaner(html)
+            description = self._extract_meta_content(html, 'description') or self._extract_meta_content(html, 'og:description')
+            attachments = self._extract_generic_attachment_links(url, html)
+            attachment_texts: list[str] = []
+            primary_raw = resp.content
+            primary_ext = '.html'
+            for file in attachments[:2]:
+                attachment_text, raw, ext = self._download_attachment(file['url'])
+                if attachment_text:
+                    attachment_texts.append(f"[첨부:{file['title']}] {attachment_text}")
+                if ext in {'.pdf', '.docx'} and raw:
+                    primary_raw = raw
+                    primary_ext = ext
+            publish_raw = (
+                self._extract_meta_content(html, 'article:published_time')
+                or self._extract_meta_content(html, 'og:regDate')
+                or self._extract_meta_content(html, 'publish_date')
+            )
+            if not publish_raw:
+                date_match = re.search(r'(20\d{2}[./-]\d{1,2}[./-]\d{1,2}(?:\s+\d{1,2}:\d{2})?)', html)
+                if date_match:
+                    publish_raw = date_match.group(1)
+            combined = normalize_text_for_storage('\n\n'.join(x for x in [body, description, *attachment_texts] if x))
+            if not combined:
+                return None
+            return {
+                'title': (title or combined[:80])[:300],
+                'content_text': combined[:180000],
+                'publish_time_utc': self._parse_datetime(publish_raw),
+                'raw_bytes': primary_raw,
+                'raw_ext': primary_ext,
+                'attachments': attachments,
+            }
+        except Exception:
+            return None
+
+    def _parse_samsung_research_links(self, base_url: str, html: str, max_items: int) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for href, label in re.findall(r'(?is)<a[^>]+href=["\']([^"\']*common\.do\?cmd=down[^"\']+)["\'][^>]*>(.*?)</a>', html or ''):
+            url = urljoin(base_url, href.replace('&amp;', '&'))
+            if url in seen:
+                continue
+            seen.add(url)
+            title = html_cleaner(label).strip()
+            if not title:
+                continue
+            date_match = re.search(r'(20\d{2}\.\d{1,2}\.\d{1,2})', title)
+            rows.append(
+                {
+                    'url': url,
+                    'title': title[:300],
+                    'category_hint': 'research_pdf',
+                    'kind': 'download',
+                    'publish_time_utc': self._parse_datetime(date_match.group(1)) if date_match else None,
+                }
+            )
+            if len(rows) >= max_items:
+                break
+        return rows
+
+    def _parse_kbfg_research_links(self, base_url: str, html: str, max_items: int) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        pattern = r'(?is)<a[^>]+href=["\'](/kbresearch/report/reportView\.do\?reportId=\d+)["\'][^>]*>(.*?)</a>'
+        for href, label in re.findall(pattern, html or ''):
+            url = urljoin(base_url, href)
+            if url in seen:
+                continue
+            seen.add(url)
+            title = html_cleaner(label).strip()
+            if not title or title.startswith('조회수'):
+                continue
+            rows.append({'url': url, 'title': title[:300], 'category_hint': 'research_html', 'kind': 'page'})
+            if len(rows) >= max_items:
+                break
+        return rows
+
+    def _parse_woori_research_links(self, base_url: str, html: str, max_items: int) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        pattern = r'(?is)<a[^>]+href=["\']([^"\']*research_report\.php\?idx=\d+[^"\']*)["\'][^>]*>(.*?)</a>'
+        for href, label in re.findall(pattern, html or ''):
+            url = urljoin(base_url, href)
+            if url in seen:
+                continue
+            seen.add(url)
+            title = html_cleaner(label).strip()
+            if not title or len(title) < 6:
+                continue
+            rows.append({'url': url, 'title': title[:300], 'category_hint': 'research_html', 'kind': 'page'})
+            if len(rows) >= max_items:
+                break
+        return rows
+
+    def _parse_ubs_research_links(self, base_url: str, html: str, max_items: int) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        fallback = {'url': 'https://www.ubs.com/global/en/wealthmanagement/insights/house-view.html', 'title': 'UBS House View', 'category_hint': 'research_html', 'kind': 'page'}
+        for href, label in re.findall(r'(?is)<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', html or ''):
+            if '/wealthmanagement/insights/' not in href:
+                continue
+            if any(token in href for token in ['/jcr_content/', '.jpg', '.png', 'disclaimer', '#']):
+                continue
+            if 'secure.ubs.com' in href and 'market-insights' not in href:
+                continue
+            url = urljoin(base_url, href)
+            if url in seen:
+                continue
+            seen.add(url)
+            title = html_cleaner(label).strip() or url.rsplit('/', 1)[-1].replace('.html', '').replace('-', ' ')
+            rows.append({'url': url, 'title': title[:300], 'category_hint': 'research_html', 'kind': 'page'})
+            if len(rows) >= max_items:
+                break
+        if not rows:
+            rows.append(fallback)
+        return rows[:max_items]
+
+    def _parse_blackrock_research_links(self, base_url: str, html: str, max_items: int) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = [
+            {'url': base_url, 'title': 'BlackRock Investment Institute Outlook', 'category_hint': 'research_html', 'kind': 'page'}
+        ]
+        seen = {base_url}
+        for href in re.findall(r'(?is)https://[^"\']+\.pdf[^"\']*', html or ''):
+            url = href.replace('&amp;', '&')
+            if url in seen:
+                continue
+            seen.add(url)
+            title = url.rsplit('/', 1)[-1].split('?', 1)[0].replace('.pdf', '').replace('-', ' ')
+            rows.append({'url': url, 'title': title[:300], 'category_hint': 'research_pdf', 'kind': 'download'})
+            if len(rows) >= max_items:
+                break
+        return rows[:max_items]
+
+    def _parse_pimco_research_links(self, base_url: str, html: str, max_items: int) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for href, label in re.findall(r'(?is)<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', html or ''):
+            if '/us/en/insights/' not in href or href.rstrip('/') == '/us/en/insights':
+                continue
+            if any(token in href for token in ['.jpg', '.png', '#']):
+                continue
+            url = urljoin(base_url, href)
+            if url in seen:
+                continue
+            seen.add(url)
+            title = html_cleaner(label).strip() or url.rsplit('/', 1)[-1].replace('-', ' ')
+            rows.append({'url': url, 'title': title[:300], 'category_hint': 'research_html', 'kind': 'page'})
+            if len(rows) >= max_items:
+                break
+        return rows[:max_items]
+
+    def _collect_research_profile_docs(self, profile: ResearchSourceProfile, max_items: int, call_dir: Any) -> list[dict[str, Any]]:
+        try:
+            html = self._http_get(profile.entry_url).text
+        except Exception:
+            return []
+
+        if profile.profile_key == 'samsung_sec_research':
+            links = self._parse_samsung_research_links(profile.entry_url, html, max_items)
+        elif profile.profile_key == 'kb_financial_research':
+            links = self._parse_kbfg_research_links(profile.entry_url, html, max_items)
+        elif profile.profile_key == 'woori_fri':
+            links = self._parse_woori_research_links(profile.entry_url, html, max_items)
+        elif profile.profile_key == 'ubs_cio':
+            links = self._parse_ubs_research_links(profile.entry_url, html, max_items)
+        elif profile.profile_key == 'blackrock_bii':
+            links = self._parse_blackrock_research_links(profile.entry_url, html, max_items)
+        elif profile.profile_key == 'pimco_outlook':
+            links = self._parse_pimco_research_links(profile.entry_url, html, max_items)
+        else:
+            links = []
+
+        collected: list[dict[str, Any]] = []
+        for link in links[:max_items]:
+            page: dict[str, Any] | None
+            if link.get('kind') == 'download':
+                attachment_text, raw, ext = self._download_attachment(str(link['url']))
+                if not attachment_text and not raw:
+                    continue
+                page = {
+                    'title': str(link.get('title') or '')[:300],
+                    'content_text': normalize_text_for_storage(f"{link.get('title') or ''}\n{attachment_text}")[:180000],
+                    'publish_time_utc': link.get('publish_time_utc'),
+                    'raw_bytes': raw,
+                    'raw_ext': ext,
+                    'attachments': [{'url': str(link['url']), 'title': str(link.get('title') or '')[:200]}],
+                }
+            else:
+                page = self._extract_research_html_page(str(link['url']), str(link.get('title') or ''))
+            if page is None or not page.get('content_text'):
+                continue
+
+            url = str(link['url'])
+            doc_id = f"{profile.profile_key}_{hashlib.sha1(url.encode('utf-8', errors='ignore')).hexdigest()[:16]}"
+            saved = self.archive.save_document(
+                root=call_dir,
+                source=profile.profile_key,
+                doc_id=doc_id,
+                title=str(page['title']),
+                url=url,
+                content_text=str(page['content_text']),
+                metadata={
+                    'house_name': profile.house_name,
+                    'source_id': profile.source_id,
+                    'profile_key': profile.profile_key,
+                    'group': profile.group,
+                    'market_scope': profile.market_scope,
+                    'access_tier': profile.access_tier,
+                    'redistribution_policy': profile.redistribution_policy,
+                    'adapter_type': profile.adapter_type,
+                    'house_quality_score': profile.house_quality_score,
+                    'publish_time_utc': str(page.get('publish_time_utc') or ''),
+                    'attachments': page.get('attachments', []),
+                    'entry_url': profile.entry_url,
+                },
+                raw_bytes=page.get('raw_bytes') or b'',
+                raw_ext=str(page.get('raw_ext') or '.html'),
+            )
+            collected.append(
+                {
+                    'source_system': 'PUBLIC_RESEARCH_REPORTS',
+                    'source_id': profile.source_id,
+                    'source_doc_id': doc_id,
+                    'category': str(link.get('category_hint') or 'research_public'),
+                    'title': str(page['title']),
+                    'url': url,
+                    'content_text': str(page['content_text']),
+                    'publish_time_utc': page.get('publish_time_utc') or link.get('publish_time_utc'),
+                    'local_doc_dir': saved['doc_dir'],
+                    'attachments': page.get('attachments', []),
+                    'extra_metadata': {
+                        'house_name': profile.house_name,
+                        'profile_key': profile.profile_key,
+                        'access_tier': profile.access_tier,
+                        'redistribution_policy': profile.redistribution_policy,
+                        'adapter_type': profile.adapter_type,
+                        'market_scope': profile.market_scope,
+                        'source_group': profile.group,
+                        'house_quality_score': profile.house_quality_score,
+                        'layout_profile': profile.profile_key,
+                    },
+                }
+            )
+        return collected
+
     def _extract_policy_links(self, category: str, base_url: str, html: str, max_items: int) -> list[dict[str, Any]]:
         pattern = self.POLICY_PATTERNS.get(category)
         if not pattern:
@@ -386,21 +687,44 @@ class BatchIngestor:
         if source_system == "BOK_PUBLICATIONS":
             base = 0.35
             should_keep = bool(hits) or bool(english_hits) or any(token in text for token in ["rate", "inflation", "yield", "macro"])
+            impact_scope = "macro"
+            policy_area = "monetary"
+            related_assets = hits[:6] + english_hits[:6]
         elif source_system == "NAVER_HEADLINE_NEWS":
             base = 0.4
             should_keep = True
+            impact_scope = "macro"
+            policy_area = "headline"
+            related_assets = hits[:6] + english_hits[:6]
         elif source_system in {"FRED_MACRO", "BLS_MACRO", "BEA_MACRO", "FISCALDATA_MACRO", "OECD_BRIEFING", "WORLDBANK_MACRO", "IMF_MACRO", "EUROSTAT_MACRO", "GLOBAL_MACRO_INTEL", "INTERNATIONAL_MACRO_INTEL", "BROAD_ISSUE_STREAM"}:
             base = 0.42
             should_keep = True
+            impact_scope = "macro"
+            policy_area = "macro"
+            related_assets = hits[:6] + english_hits[:6]
+        elif source_system == "PUBLIC_RESEARCH_REPORTS":
+            report_type = classify_research_report_type(title, content_text)
+            entities = entity_linker(f"{title} {content_text}")
+            related_assets = [str(item.get("name_kr") or item.get("ticker") or "") for item in entities if item.get("name_kr") or item.get("ticker")]
+            base = 0.48
+            should_keep = report_type in {
+                "morning_outlook", "close_outlook", "daily_strategy", "weekly_strategy", "monthly_strategy",
+                "macro", "rates", "fx", "credit", "commodity", "sector_report", "company_report", "theme_report", "policy_brief",
+            }
+            impact_scope = "company" if report_type == "company_report" or related_assets else "sector" if report_type in {"sector_report", "theme_report"} else "macro"
+            policy_area = "research"
+            english_hits = english_hits + [report_type]
         else:
             base = 0.18
             should_keep = len(hits) >= 2 or len(english_hits) >= 2 or any(token in text for token in ["policy", "support", "regulation", "industry"])
-        related_assets = hits[:6] + english_hits[:6]
+            impact_scope = "macro" if any(token in text for token in ["rate", "inflation", "gdp", "debt", "fiscal"]) else "sector"
+            policy_area = "industry"
+            related_assets = hits[:6] + english_hits[:6]
         return {
             "should_keep": should_keep,
-            "relevance_score": round(min(1.0, base + len(hits) * 0.1 + len(english_hits) * 0.08), 3),
-            "impact_scope": "macro" if source_system in {"BOK_PUBLICATIONS", "FRED_MACRO", "BLS_MACRO", "BEA_MACRO", "FISCALDATA_MACRO", "OECD_BRIEFING", "GLOBAL_MACRO_INTEL"} or any(token in text for token in ["rate", "inflation", "gdp", "debt", "fiscal"]) else "sector",
-            "policy_area": "monetary" if source_system == "BOK_PUBLICATIONS" or any(token in text for token in ["rate", "yield", "pce", "cpi"]) else "fiscal" if any(token in text for token in ["fiscal", "debt", "deficit"]) else "industry",
+            "relevance_score": round(min(1.0, base + len(hits) * 0.1 + len(english_hits) * 0.08 + len(related_assets) * 0.04), 3),
+            "impact_scope": impact_scope,
+            "policy_area": policy_area,
             "related_assets": related_assets[:6],
             "reason": ", ".join(related_assets[:6]) if related_assets else "heuristic relevance match",
         }
@@ -570,6 +894,47 @@ class BatchIngestor:
         if any(keyword.lower() in t for keyword in regular_keywords):
             return "regular"
         return "occasional"
+
+    def ingest_public_research_reports(self, db: Session, max_items: int = 30, group: str = 'all') -> BatchIngestionResponse:
+        started = datetime.now(UTC)
+        request_id = str(uuid.uuid4())
+        call_dir = self.archive.create_call_dir('batch_research_reports', request_id)
+        self._ensure_tables(db)
+        profiles = get_research_profiles(group=group, only_enabled=True)
+        if not profiles:
+            finished = datetime.now(UTC)
+            return BatchIngestionResponse(
+                source_system='PUBLIC_RESEARCH_REPORTS',
+                request_id=request_id,
+                started_at_utc=started,
+                finished_at_utc=finished,
+                fetched_count=0,
+                stored_count=0,
+                skipped_count=0,
+                saved_call_dir=str(call_dir),
+                message='활성화된 공개 리서치 프로파일이 없습니다.',
+            )
+
+        per_profile = max(1, max_items // max(len(profiles), 1))
+        collected: list[dict[str, Any]] = []
+        for profile in profiles:
+            docs = self._collect_research_profile_docs(profile, per_profile + 1, call_dir)
+            for item in docs:
+                collected.append(item)
+                if len(collected) >= max_items:
+                    break
+            if len(collected) >= max_items:
+                break
+
+        return self._finalize_batch_docs(
+            db,
+            call_dir,
+            'PUBLIC_RESEARCH_REPORTS',
+            f'공개 리서치 배치 적재 완료 ({group})',
+            request_id,
+            started,
+            collected,
+        )
 
     def ingest_policy_briefing(self, db: Session, max_items: int = 30) -> BatchIngestionResponse:
         seeds = [
@@ -1038,44 +1403,78 @@ class BatchIngestor:
         for group_source, docs in grouped.items():
             filtered.extend(self._apply_market_triage(group_source, docs))
         docs_input = [
-            {"source": item.get("source_system", source_system), "title": item["title"], "content_text": item["content_text"], "url": item["url"]}
+            {
+                "source": item.get("source_id") or item.get("source_system", source_system),
+                "title": item["title"],
+                "content_text": item["content_text"],
+                "url": item["url"],
+            }
             for item in filtered
         ]
         summaries = self.gemini.summarize_documents(docs_input)
         signals = self.gemini.extract_prediction_signals(docs_input)
-        summary_map = {str(x.get("title") or ""): x for x in summaries}
-        signal_map = {str(x.get("title") or ""): x for x in signals}
+        summary_map = {f"{str(x.get('source') or '')}|{str(x.get('title') or '')}": x for x in summaries}
+        signal_map = {f"{str(x.get('source') or '')}|{str(x.get('title') or '')}": x for x in signals}
 
         stored = 0
         skipped = 0
         for item in filtered:
+            source_key = str(item.get("source_id") or item.get("source_system") or source_system)
             title = item["title"]
             text = item["content_text"]
-            summary = summary_map.get(title, {})
-            signal = signal_map.get(title, {})
-            fp = doc_fingerprint(item["source_system"], item["url"], title, text)
+            summary = summary_map.get(f"{source_key}|{title}", {})
+            signal = signal_map.get(f"{source_key}|{title}", {})
+            fp = doc_fingerprint(str(item.get("source_id") or item["source_system"]), item["url"], title, text)
+            metadata_json = {
+                "scores": score_engine(text, item.get("publish_time_utc")),
+                "entities": entity_linker(text),
+                "triage": item.get("triage", {}),
+                "prediction_signal": signal,
+                "attachments": item.get("attachments", []),
+                **(item.get("extra_metadata") or {}),
+            }
+            category = item["category"]
+            ticker = None
+            instrument_name = None
+            sector = None
+            event_type = str(signal.get("primary_event") or event_classifier(text))
+            if item.get("source_system") == "PUBLIC_RESEARCH_REPORTS":
+                research_meta = normalize_research_document(
+                    house_name=str((item.get("extra_metadata") or {}).get("house_name") or source_key),
+                    source_id=str(item.get("source_id") or source_key),
+                    access_tier=str((item.get("extra_metadata") or {}).get("access_tier") or "PUBLIC_OPEN"),
+                    redistribution_policy=str((item.get("extra_metadata") or {}).get("redistribution_policy") or "DERIVED_ONLY"),
+                    layout_profile=str((item.get("extra_metadata") or {}).get("layout_profile") or (item.get("extra_metadata") or {}).get("profile_key") or "research_generic"),
+                    market_scope=str((item.get("extra_metadata") or {}).get("market_scope") or "GLOBAL"),
+                    title=title,
+                    content_text=text,
+                    url=item["url"],
+                    published_at_utc=item.get("publish_time_utc"),
+                    summary=summary if isinstance(summary, dict) else {},
+                    prediction_signal=signal if isinstance(signal, dict) else {},
+                    house_quality_score=float((item.get("extra_metadata") or {}).get("house_quality_score") or 0.8),
+                )
+                metadata_json.update(research_meta)
+                category = str(research_meta.get("report_type") or category)
+                ticker = research_meta.get("primary_ticker")
+                instrument_name = research_meta.get("primary_company")
+                sector = research_meta.get("primary_sector")
+                event_type = "research_report"
             payload = {
                 "source_system": item["source_system"],
                 "source_id": item["source_id"],
                 "source_doc_id": item["source_doc_id"],
-                "category": item["category"],
+                "category": category,
                 "title": title,
                 "url": item["url"],
                 "publish_time_utc": item.get("publish_time_utc"),
-                "ticker": None,
-                "instrument_name": None,
-                "sector": None,
-                "event_type": str(signal.get("primary_event") or event_classifier(text)),
+                "ticker": ticker,
+                "instrument_name": instrument_name,
+                "sector": sector,
+                "event_type": event_type,
                 "content_text": text,
                 "summary_json": summary if isinstance(summary, dict) else {},
-                "metadata_json": {
-                    "scores": score_engine(text, item.get("publish_time_utc")),
-                    "entities": entity_linker(text),
-                    "triage": item.get("triage", {}),
-                    "prediction_signal": signal,
-                    "attachments": item.get("attachments", []),
-                    **(item.get("extra_metadata") or {}),
-                },
+                "metadata_json": metadata_json,
                 "local_doc_dir": item["local_doc_dir"],
                 "fingerprint": fp,
             }

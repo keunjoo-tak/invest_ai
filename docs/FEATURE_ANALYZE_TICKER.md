@@ -1,39 +1,26 @@
-# 공통 분석 엔진
+# analyze/ticker 공통 분석 엔드포인트
 
 ## 1. 목적
-`POST /api/v1/analyze/ticker`는 모든 사용자 제품의 공통 기반이 되는 핵심 분석 엔진입니다.
+`POST /api/v1/analyze/ticker`는 내부 공통 분석 파이프라인을 직접 호출하는 엔드포인트입니다. 사용자 제품 API보다 더 원시적인 분석 결과를 반환합니다.
 
 ## 2. 입력
-- `ticker_or_name`
-- `as_of_date`
-- `lookback_days`
-- `analysis_mode`
-- `notify`
-- `force_send`
-- `channels`
-- `response_language`
+- 종목명 또는 티커
+- 알림 여부
+- 강제 발송 여부
+- 기타 내부 옵션
 
 ## 3. 출력
-- `features`
-- `signal`
-- `explanation`
-- `alert`
+- 종목 식별 결과
+- 특징 변수 집합
+- 시그널 점수와 방향
+- 설명 텍스트
+- 알림 채널 결과
+- 원문 요약 및 LLM 기반 부가 정보
 
-## 4. 처리 흐름
-1. 종목 정규화
-2. 시세, 뉴스, 공시, 재무제표, 거시 데이터 수집
-3. 문서 요약 및 신호 추출
-4. 전처리 및 적재
-5. feature 생성
-6. signal 계산
-7. explanation 생성
-8. alert 판단
+## 4. 활용 용도
+- `Stock Decision`, `Action Planner`, `Watchlist Alerts`의 공통 분석 엔진
+- 내부 점검 및 디버깅
+- Swagger 기반 수동 테스트
 
-## 5. 현재 사용자 제품과의 관계
-- `Market Regime`: 거시/가격/문서 흐름을 시장 수준으로 재구성
-- `Stock Decision`: 공통 분석 결과를 종목 리포트로 재구성
-- `Action Planner`: 종목 판단을 행동 계획으로 재구성
-- `Watchlist Alerts`: 동일 기반 데이터를 현재 시점 점검 용도로 재구성
-
-## 6. 문서화 이유
-이 API 자체를 사용자가 직접 호출할 수는 있지만, 현재 프로젝트에서는 사용자 제품 리포트의 공통 엔진으로 보는 것이 더 정확합니다.
+## 5. 주의 사항
+- 사용자 화면에서는 보통 제품 API를 사용하고, 이 엔드포인트는 내부 분석 확인용으로 보는 것이 맞습니다.

@@ -1,167 +1,774 @@
-“서비스 선택 화면”과 “리포트 열람 화면”이 같은 레이아웃 안에 섞여 있다는 점이 문제야.
-화면 정보구조(IA)와 레이아웃 모드 전환 문제를 해결해줘.
+* 현재 서비스는 **Market Regime → Stock Decision → Action Planner**의 계층형 구조로 운영된다.
+* 리서치 리포트는 **시장/섹터/종목 판단의 근거 레이어**로 사용하고, 가격·수급·재무·뉴스를 대체하지 않는다.
+* 수집 대상은 **공개 공개형(public open)**, **로그인/고객권한형(authenticated)**, **상용 라이선스형(licensed)** 으로 분리한다.
+* 원문 저작권과 재배포 제한이 크므로, **사용자 노출은 원문 전문이 아니라 파생 데이터·근거 스니펫·출처 링크 중심**으로 설계한다. 삼성증권 리포트는 무단 복제·배포·전송·변경·대여를 금지한다고 명시하고 있고, Morgan Stanley는 별도 Research Portal 접근을 요구하며, Nomura는 자료가 전문투자자/기관투자자 대상이라고 밝히고 있다. Morningstar도 별도 Licensed Research 상품을 운영한다. ([Samsung Pop][1])
 
-기본적으로 컨텐츠 배치, 구조를 수정하는 것이지, 전반적인 웹 페이지의 색감이나 디자인, 폰트 등 디자인적 요소들은 현재 상태를 **반드시** 유지합니다.
+---
 
-1) 가장 중요한 원칙: “선택 화면”과 “결과 화면”을 분리
-지금처럼 홈에서 바로 카드 아래에 결과를 넣지 말고, 서비스 실행 시 결과 전용 뷰로 전환
-# 권장 구조
--홈 화면
-4개 서비스 카드
-각 서비스 목적 설명
-빠른 실행 버튼
--결과 화면
-선택한 서비스의 전체폭 리포트
-좌측 또는 상단에 파라미터/조건 입력
-우측 또는 하단에 리포트 본문
-필요시 다른 서비스로 전환 가능
+## 1) 수집 대상(Source Inventory) 우선순위
+### 1-A. 국내 증권사 리서치 포털 — P1
+**1차 구현 대상(seed list)**
 
-2) 가장 추천하는 레이아웃: “좌측 컨트롤 + 우측 리포트” 2단 구조
-- 전체 레이아웃
-상단: 글로벌 헤더
-좌측(320~380px 고정폭): 서비스 선택 + 입력 조건 + 실행 히스토리
-우측(가변폭, 핵심 영역): 리포트 본문 전용 영역
+* `samsung_sec_research`
+  `priority=P1`, `access=PUBLIC_OPEN`, `coverage=[오늘의리포트, 모닝미팅데일리, 마켓전략, 모델포트폴리오, 기업리포트, 산업리포트, 경제리포트, 채권리포트, 계량리포트]`, `formats=[HTML_INDEX, PDF]`, `collection=HTML 목록 탐색 후 PDF 다운로드`. 삼성 리서치 탐색기에는 위 카테고리가 공개되어 있고, 실제 보고서 클릭 시 PDF 다운로드 URL이 노출된다. ([Samsung Pop][2])
 
-이 구조의 장점
--사용자는 입력과 결과를 분리해서 인지할 수 있습니다.
--결과 리포트가 전체 폭을 충분히 사용할 수 있습니다.
--서비스가 바뀌어도 레이아웃은 동일하므로 UX 일관성이 좋아집니다.
+* `miraeasset_sec_research`
+  `priority=P1`, `access=PUBLIC_OPEN`, `coverage=[전체, 기업분석, 산업분석, 투자전략, 정기리포트, 디지털리서치, 글로벌ETF]`, `formats=[HTML_INDEX, PDF]`, `collection=카테고리별 목록 크롤링 + 첨부 PDF 수집`. 미래에셋은 리서치 리포트 분류 체계가 비교적 명확하고, 글로벌 주식전략 PDF도 공개된다. ([미래에셋 금융서비스][3])
 
-3) 리포트는 “스크롤 문서형”으로 봐야 함
+* `nh_sec_research`
+  `priority=P1`, `access=PUBLIC_OPEN`, `coverage=[산업분석, 투자전략, FICC, 글로벌, 전망자료]`, `formats=[HTML_INDEX, PDF]`, `collection=연구포럼/리포트 목록 크롤링 후 PDF 확보`. NH Research Forum에는 산업분석·투자전략·FICC·글로벌 섹션과 PDF 다운로드가 표시된다. ([nhisresearch.com][4])
 
-4) 각 리포트는 “요약 → 펼침” 구조로 바꿔야 함
-Level 1. 상단 Executive Summary : 맨 위에서 바로 보여줘야 하는 것만 노출
-Level 2. 섹션 요약 카드 : 각 섹션을 한 줄 요약으로 접어둠
-Level 3. 상세 내용
+* `shinhan_sec_research`
+  `priority=P1`, `access=PUBLIC_OPEN`, `coverage=[최신, 국내, 해외, 비상장, 시황, 투자전략, 경제/외환, 주식, 채권, 크레딧, ESG/퀀트, 대체자산]`, `formats=[HTML_INDEX, PDF]`, `collection=모바일/웹 리포트 목록 크롤링 + PDF 뷰 수집`. 신한 리포트와 리서치 탐색기 모두 카테고리 구조가 확인된다. ([신한투자증권][5])
 
-지금처럼 처음부터 전부 보여주지 말고,
-처음엔 “판단에 꼭 필요한 최소 정보”만 보이게 해줘.
+* `kb_sec_research`
+  `priority=P1`, `access=PARTIAL_OPEN_OR_LOGIN`, `coverage=[리서치보고서, KB데일리, 자산배분/매크로, 한국투자, 해외투자, 산업/기업, 포트폴리오]`, `formats=[HTML_INDEX, PDF]`, `collection=공개 리포트 우선 + 인증 필요 구간은 entitlement 기반`. KB Daily PDF는 “데일리에 수록된 자료는 각 리포트의 요약본”이라고 밝히므로, **KB Daily는 digest**, 원본 리포트는 별도 1차 출처로 취급해야 한다. ([KB Securities][6])
 
-5) 결과 상단은 반드시 “판단 요약 바”로 고정
-상단에는 sticky summary bar 고정
+* `hana_sec_research`
+  `priority=P1`, `access=LOGIN_REQUIRED`, `coverage=[Daily, 국내주식, 해외주식, 투자전략, Hana Guru Eye, 데일리 모닝 브리프, Hana Global Guru Eye]`, `formats=[HTML_INDEX, PDF]`, `collection=로그인 세션 기반`. 하나증권은 리서치 센터에서 Daily/국내주식/해외주식/투자전략 구조를 제공하고, 여러 시리즈를 안내하지만 로그인 후 이용 가능하다고 명시한다. ([하나증권][7])
 
-6) 리포트 본문은 “한 줄 폭”을 줄여야 함
-현재 이미지를 보면 좁은 폭 안에 텍스트가 길게 접히면서 읽기 어려운 상태임.
-그런데 반대로 전체폭을 무조건 다 쓰면 텍스트 줄 길이가 너무 길어져서 또 읽기 어려움.
-그래서 리포트 본문은 아래와 같이 재구성
+* `kiwoom_sec_research`
+  `priority=P1`, `access=PUBLIC_OPEN`, `coverage=[키움모닝레터, 일간/주간/월간/중장기 증시전망, 경제분석, 이슈분석, 퀀트전략, 환율전망, 해외상품분석, 기업분석, 산업분석, 글로벌ETF전략, 미국/중국 시황, AI보고서, 채권전망]`, `formats=[HTML_INDEX, HTML/PDF_MIXED]`, `collection=카테고리별 목록 크롤링`. 키움은 국내 리서치와 해외증시 카테고리 구성이 매우 풍부하다. ([키움증권][8])
 
-권장 폭
-본문 읽기 영역 최대폭: 960~1200px
-본문 내부 텍스트 컬럼 최대폭: 720~820px
-수치 카드/보조 패널은 옆 컬럼으로 배치
+* `meritz_sec_research`
+  `priority=P1`, `access=PUBLIC_OPEN`, `coverage=[투자전략, 산업분석, 기업분석, 장외주식분석, 뉴스/시황, 증시캘린더, 주요지표및뉴스]`, `formats=[HTML_INDEX, PDF_MIXED]`, `collection=리서치 메인/카테고리 탐색`. 메리츠 리서치 메인에 분석 카테고리가 비교적 명확하게 노출된다. ([메리츠홈][9])
 
-즉, 전체 화면을 넓게 쓰되 텍스트 자체는 너무 넓게 퍼지지 않게 해야 합니다.
+* `koreainvestment_sec_research`
+  `priority=P1`, `access=PUBLIC_OPEN`, `coverage=[모든리서치, 리포트, 미국 현지 리서치, 스팟코멘트, 모닝브리프]`, `formats=[HTML_SEARCH, HTML/PDF_MIXED]`, `collection=검색 페이지 기반 크롤링`. 한국투자증권은 검색형 포털 구조를 갖고 있고, 검색 결과 카운트가 공개된다. ([TrueFriend][10])
 
-7) 리포트 내부는 “1열 문서 + 1열 보조 패널” 구조가 좋음
--메인 컬럼(약 70%)
-결론
-상세 해석
-근거 문장
-타임라인
-반증 조건
--보조 컬럼(약 30%)
-핵심 점수
-요약 KPI
-빠른 액션
-리스크 플래그
-관련 이벤트 일정
+* `eugene_sec_research`
+  `priority=P1`, `access=PUBLIC_OPEN`, `coverage=[글로벌매크로팀, 전략산업분석팀, 대체투자분석팀, 코스닥벤처팀, 글로벌전략, 기업분석, 산업분석, 해외기업]`, `formats=[HTML_INDEX, PDF_MIXED]`, `collection=리서치센터 메뉴 기반 수집`. ([EugeneFN][11])
 
-이렇게 하면 리포트는 문서처럼 읽히고, 오른쪽에는 언제든 참고할 수 있는 핵심 요약이 노출.
-특히, Stock Decision, Action Planner에 잘 맞습니다.
+### 1-B. 국내 증권사 리서치 포털 — P2
 
-8) 서비스별 화면 패턴을 통일하되, 리포트 구조는 다르게
-지금 4개 서비스는 성격이 다릅니다.
-따라서 카드 UI를 똑같이 유지할 필요는 없고, 상위 레이아웃만 통일하고 내부는 서비스별로 최적화한다.
+* `daishin_sec_research`
+  `priority=P2`, `access=PUBLIC_OPEN`, `coverage=[리서치센터, 해외시장 투자정보 등]`, `formats=[HTML/PDF_MIXED]`. 구조는 확인되지만 P1 업체 대비 카테고리 정규화가 덜 명확하므로 2차로 넣는다. ([대신증권 금융2][12])
 
--Market Regime
-가장 적합한 패턴:
-상단: 시장 체제 결론 + 점수 + 확신도
-중단: 체제 분해 / breadth / 거시 압력
-하단: 강세/약세 섹터, 핵심 동인, 반증 조건
+---
 
-이 서비스는 “시장 맵” 형태가 중요합니다.
-즉 텍스트보다:
--체제 score bars
--섹터 heatmap
--주요 동인 카드
--이벤트 캘린더
-같은 시각화 비중을 높여줘.
+### 1-C. 국내 은행/금융연구소 — P1
 
--Stock Decision
-가장 적합한 패턴:
-상단: 최종 판단 + 투자 포인트 + 기간별 점수
-좌측 본문: 상승/하락 근거, 타임라인, 재무/이벤트 해석
-우측 보조패널: 핵심 지표, 리스크, 체크포인트
+* `kb_financial_research`
+  `priority=P1`, `access=PUBLIC_OPEN`, `coverage=[거시/경제, 산업일반, 고객/디지털, 부동산 등]`, `formats=[HTML_INDEX, HTML/PDF_MIXED]`. KB경영연구소는 분류와 발간일이 비교적 정돈되어 있다. ([KBFG][13])
 
-이 서비스는 문서형 분석 보고서가 가장 잘 맞습니다.
+* `hana_if`
+  `priority=P1`, `access=PUBLIC_OPEN`, `coverage=[금융시장, 금융산업, 일반산업, 글로벌, 부동산, 디지털, 경영, 금융소비트렌드, 하나금융포커스, 하나전망, 금통위분석자료, HIF월간산업이슈, 금융시장모니터, 금융지표]`, `formats=[HTML_INDEX, PDF]`. 하나금융연구소는 정기·비정기 보고서 체계가 명확하고, 금융시장 PDF도 당일 게시된다. ([hanaif.re.kr][14])
 
--Action Planner
-가장 적합한 패턴:
-상단: 지금 해야 할 행동
-중단: 진입 구간 / 무효화 구간 / 목표 구간
-하단: 시나리오별 대응
+* `woori_fri`
+  `priority=P1`, `access=PUBLIC_OPEN`, `coverage=[경제∙금융시장, 경영전략, 디지털∙AI, 자산관리, ESG 등]`, `formats=[HTML_INDEX, HTML/PDF_MIXED]`. 금융시장 브리프가 정기적으로 올라온다. ([wfri.re.kr][15])
 
-이건 문서형도 필요하지만 플로우차트/시나리오 카드 형태가 매우 중요합니다.
+* `kdb_future_strategy_institute`
+  `priority=P1`, `access=PUBLIC_OPEN`, `coverage=[연구&분석자료, 산업/경제/정책금융 관련 리포트]`, `formats=[HTML_INDEX, PDF]`. KDB는 공공정책·산업 구조 변화 신호에 유용하다. ([rd.kdb.co.kr][16])
 
--Watchlist Alerts
-가장 적합한 패턴:
-리스트 중심
-우측 상세 패널
-알림 상태/트리거 중심
+* `ibk_research`
+  `priority=P1`, `access=PUBLIC_OPEN`, `coverage=[연차보고서, CEO REPORT, 기업/산업/중소기업 연구자료]`, `formats=[HTML_INDEX, PDF]`. IBK경제연구소/CEO REPORT는 중소형주·산업 현안 맥락에 유용하다. ([IBK 연구소][17])
 
-이 서비스는 긴 리포트보다 모니터링 콘솔형 UI가 더 적합합니다.
+### 1-D. 국내 은행/금융연구소 — P2
 
-즉, 4개 서비스에 동일한 리포트 레이아웃을 강제하지 않는 것이 좋음.
+* `shinhan_bank_economic_brief`
+  `priority=P2`, `access=MANUAL_VALIDATE_FIRST`, `coverage=[신한경제브리프, 신한리뷰 등]`, `formats=[PDF]`. 현재 메뉴 존재는 확인되지만, 자동화 가능한 최신 공개 인덱스는 별도 수동 검증 후 붙이는 것이 안전하다. 과거 PDF와 메뉴 경로는 확인된다. ([신한은행][18])
 
-9) 한 화면에 “여러 서비스 결과”를 동시에 보여주지 않는 게 좋음
+---
 
-지금은 2x2 레이아웃 때문에 다른 서비스 칸들이 비어 있는 상태에서 한 칸만 리포트가 길게 열리고 있습니다. 이건 시각적으로도 “화면 낭비”
+### 1-E. 글로벌 공개형 리서치/인사이트 — P1
 
-더 나은 방식
+* `ubs_cio`
+  `priority=P1`, `access=PUBLIC_OPEN`, `coverage=[CIO Insights, House View, Daily, Weekly, CIO Alert]`, `formats=[HTML_ARTICLE]`. UBS는 공개 daily/weekly 체계가 명확해 글로벌 daily market layer로 적합하다. ([Japan][19])
 
-서비스 실행 시:
--선택한 서비스만 메인으로 확대
--나머지 서비스는 좌측 탭 또는 상단 탭으로 축소
--필요하면 “이전 서비스 결과와 비교”만 보조 기능으로 제공
+* `blackrock_bii`
+  `priority=P1`, `access=PUBLIC_OPEN`, `coverage=[Investment Outlook, Macro Outlook, Credit Outlook, Private Markets Outlook]`, `formats=[HTML_ARTICLE, PDF_MIXED]`. 글로벌 매크로/자산배분 시그널에 적합하다. ([BlackRock][20])
 
-즉, 동시에 4개 서비스를 다 보게 하지 말고
-지금 보고 있는 서비스 하나에 집중시키는 게 맞습니다.
+* `goldman_sachs_research_public`
+  `priority=P1`, `access=PUBLIC_OPEN`, `coverage=[Goldman Sachs Research, Reports, macro/markets/industries insights]`, `formats=[HTML_ARTICLE, PDF_MIXED]`. 공개 영역은 시장/경제/산업 인사이트가 중심이다. ([Goldman Sachs][21])
 
-10) 추천하는 최종 화면 구조
--상단 헤더
-서비스명
-시장/종목 검색
-실행 상태
-저장 / 공유 / 내보내기
+* `jpm_global_research_public`
+  `priority=P1`, `access=PUBLIC_OPEN`, `coverage=[Market Outlook, Outlooks & Forecasts, commodities/macro outlooks]`, `formats=[HTML_ARTICLE, PDF_MIXED]`. 일부 페이지는 403이 있을 수 있으므로 search-result 기반 수집과 direct article 수집을 병행한다. ([JPMorgan][22])
 
--좌측 사이드바
-4개 서비스 탭
-서비스별 입력 패널
-최근 실행 이력
-워치리스트
+* `fidelity_market_research`
+  `priority=P1`, `access=PUBLIC_OPEN`, `coverage=[Markets, quarterly market update, sector research]`, `formats=[HTML_ARTICLE]`. 글로벌/미국 시장 정리와 섹터 레벨 신호에 적합하다. ([Fidelity][23])
 
--메인 영역
-상단: 리포트 헤더 + 핵심 결론 바
-본문:
-1행: KPI 카드 4~6개
-2행: 핵심 결론 / 근거
-3행 이후: 상세 섹션 아코디언
-우측 서브패널:
-빠른 요약
-리스크
-예정 이벤트
-관련 액션 버튼
+* `schroders_outlook`
+  `priority=P1`, `access=PUBLIC_OPEN`, `coverage=[Investment Outlook, multi-asset views, region/asset-class outlook]`, `formats=[HTML_ARTICLE]`. ([schroders.com][24])
 
-11) 디자인 레벨에서 바로 바꿔야 할 것
-즉시 수정 권장
--2x2 카드 안에서 결과 렌더링 금지
--결과는 별도 전체폭 영역에서 렌더링
--서비스 실행 시 선택 카드만 확장하거나 결과 화면으로 전환
--리포트 상단에 sticky summary bar 추가
--본문은 세로 문서형으로 재배치
--섹션별 접기/펼치기 적용
--긴 텍스트 영역은 최대 너비 제한
--강세/약세 섹터, 점수 분해는 카드 나열보다 시각화 강화
--Watchlist Alerts는 리포트형보다 리스트+상세형으로 변경
--운영 도구는 별도 관리자 드로어/모달로 분리
+* `pimco_outlook`
+  `priority=P1`, `access=PUBLIC_OPEN`, `coverage=[Cyclical Outlook, Secular Outlook]`, `formats=[HTML_ARTICLE]`. 금리/채권/거시 프레임에 유용하다. ([pimco.com][25])
 
+---
+
+### 1-F. 글로벌 라이선스/권한형 리서치 — P1
+
+이 구간은 **기업분석·산업분석을 깊게 쓰려면 반드시 별도 계약/권한 모델**로 설계해야 한다.
+
+* `morningstar_licensed_research`
+  `priority=P1`, `access=LICENSED`, `coverage=[equities, funds, ETFs, stock market trends, institutional equity research]`, `formats=[API/EXPORT_OR_PORTAL]`. Morningstar는 공개 stock analysis도 제공하지만, 별도 Licensed Research와 Institutional Equity Research 상품을 운영한다. ([Morningstar][26])
+
+* `morgan_stanley_research_portal`
+  `priority=P1`, `access=LOGIN_REQUIRED_OR_LICENSED`, `coverage=[companies, industries, markets, economies]`, `formats=[PORTAL]`. Morgan Stanley는 리서치 자체를 강조하면서도 별도 Research Portal 접근을 요구한다. ([Morgan Stanley][27])
+
+* `nomura_global_markets_research`
+  `priority=P1`, `access=PROFESSIONAL_CLIENT_ONLY`, `coverage=[economics, FX, rates, equities, credit, quant]`, `formats=[PORTAL/PDF]`. 전문투자자/기관투자자용 제한이 명시되어 있다. ([nomura.com][28])
+
+* `alphasense_broker_reports`
+  `priority=P1`, `access=LICENSED`, `coverage=[broker reports from 1700+ sources]`, `formats=[PLATFORM]`. 글로벌 sell-side aggregation을 빠르게 확장하려면 가장 현실적인 옵션 중 하나다. ([AlphaSense][29])
+
+* `sp_capital_iq_pro`
+  `priority=P1`, `access=LICENSED`, `coverage=[financial data, analytics, market intelligence, in-depth research]`, `formats=[PLATFORM]`. 파생 데이터와 정합성 검증 레이어로 적합하다. ([S&P Global][30])
+
+---
+
+## 2) 수집 정책 설계
+
+### 2-A. 권한 모델
+
+모든 소스에 아래 속성을 강제한다.
+
+* `access_tier`: `PUBLIC_OPEN | AUTHENTICATED | LICENSED | MANUAL`
+* `redistribution_policy`: `DERIVED_ONLY | INTERNAL_TEXT_ONLY | LICENSED_FULLTEXT`
+* `source_of_truth`: `OFFICIAL_SITE | LICENSED_VENDOR`
+* `entitlement_required`: `true/false`
+
+핵심 규칙은 다음이다.
+
+1. `PUBLIC_OPEN` 은 원문 내부 저장은 가능하되, 사용자 노출은 **짧은 스니펫 + 출처 + 파생 피처** 중심.
+2. `AUTHENTICATED` 와 `LICENSED` 는 **조직이 합법적 권한을 가진 경우에만** 세션/토큰 기반 수집.
+3. `LICENSED_FULLTEXT` 가 아닌 경우, LLM 출력은 **원문 재생산 금지**, 파생 인사이트만 제공.
+
+### 2-B. 수집 어댑터 타입
+
+소스별 하드코딩이 아니라 **어댑터 + 프로파일** 구조로 구현해야 한다.
+
+* `HtmlListPdfAdapter`
+  HTML 목록 페이지 → 상세/다운로드 링크 추출 → PDF 저장
+  적용: 삼성, 미래에셋, NH, 신한, 키움, 메리츠 일부
+
+* `HtmlSearchAdapter`
+  검색 결과 페이지 기반 크롤링
+  적용: 한국투자, 일부 KB/유진
+
+* `HtmlArticleAdapter`
+  HTML 기사/인사이트 본문 추출
+  적용: UBS, BlackRock, Goldman, Fidelity, Schroders, PIMCO
+
+* `AuthenticatedPortalAdapter`
+  로그인 세션/쿠키 기반 목록·첨부 수집
+  적용: 하나증권, Morgan Stanley Portal 등
+
+* `LicensedFeedAdapter`
+  벤더 API/export/SFTP 기반 적재
+  적용: Morningstar, AlphaSense, S&P Capital IQ Pro
+
+* `ManualDropAdapter`
+  이메일 첨부, SFTP, 운영자 업로드
+  적용: 계약형 배포 PDF, 폐쇄형 기관자료
+
+---
+
+## 3) 전체 파이프라인 아키텍처
+
+### 3-A. 권장 스택
+
+* Language: `Python 3.12`
+* Orchestration: `Prefect`
+* HTTP/Browser: `httpx + BeautifulSoup + Playwright(fallback)`
+* Parsing: `PyMuPDF`, `pdfplumber`, `python-docx`, `mammoth`, `trafilatura`
+* Queue/Cache: `Redis`
+* Metadata DB: `PostgreSQL`
+* Vector/Search: `pgvector` 로 시작, 필요 시 `OpenSearch` 추가
+* Blob Storage: `local`
+* API/Admin: `FastAPI`
+
+### 3-B. 단계
+
+1. `source_discovery_job`
+   목록 페이지/검색 페이지/벤더 인덱스에서 신규 문서 URL 탐지
+
+2. `document_fetch_job`
+   원본 파일/HTML 저장, content hash 생성, 버전 관리
+
+3. `document_parse_job`
+   MIME 기반 파싱, 본문/표/메타데이터/첨부 분리
+
+4. `document_normalize_job`
+   문서 유형 분류, 엔티티 매핑, 카테고리 표준화
+
+5. `feature_extraction_job`
+   리포트 수준 피처, 종목/산업/시장 시그널 생성
+
+6. `service_projection_job`
+   Market Regime / Stock Decision / Action Planner 용 materialized snapshot 생성
+
+7. `qa_monitoring_job`
+   실패 문서, 파싱 품질, 중복, 결측, entitlement 오류 감시
+
+---
+
+## 4) 적재 구조(Storage Design)
+
+### 4-A. 저장 원칙
+
+* **원본은 blob storage**
+* **문서 메타/피처/서비스 스냅샷은 PostgreSQL**
+* **검색과 RAG는 pgvector + tsvector로 시작**
+* **고빈도 시계열 피처가 늘면 ClickHouse/OpenSearch를 추가**
+
+### 4-B. 객체 저장 키 예시
+
+```text
+s3://research-raw/{source_id}/{yyyy}/{mm}/{dd}/{doc_uuid}/original.{ext}
+s3://research-processed/{source_id}/{doc_uuid}/parsed.json
+s3://research-processed/{source_id}/{doc_uuid}/tables.json
+s3://research-processed/{source_id}/{doc_uuid}/figures.json
+s3://research-processed/{source_id}/{doc_uuid}/chunks.json
+```
+
+### 4-C. 핵심 테이블
+
+```text
+source_registry
+- source_id PK
+- source_name
+- provider_type
+- market_scope
+- access_tier
+- redistribution_policy
+- adapter_type
+- entry_url
+- schedule_cron
+- active
+
+document
+- doc_id PK
+- source_id FK
+- external_doc_id
+- title
+- url
+- published_at
+- fetched_at
+- mime_type
+- language
+- author
+- analyst
+- category_raw
+- category_norm
+- report_type
+- market_scope
+- access_tier
+- content_hash
+- status
+
+document_version
+- version_id PK
+- doc_id FK
+- version_no
+- raw_blob_path
+- processed_blob_path
+- text_hash
+- parser_version
+- created_at
+
+document_chunk
+- chunk_id PK
+- doc_id FK
+- section_title
+- chunk_text
+- embedding
+- token_count
+- page_from
+- page_to
+
+entity_master
+- entity_id PK
+- entity_type (market/sector/company/asset/country/policy)
+- canonical_name
+- ticker
+- exchange
+- isin
+- krx_code
+- dart_code
+
+document_entity_map
+- doc_id FK
+- entity_id FK
+- mention_type
+- confidence
+
+research_signal
+- signal_id PK
+- doc_id FK
+- entity_id FK nullable
+- signal_type
+- horizon
+- direction
+- strength
+- confidence
+- value_num
+- value_text
+- prior_value_num
+- prior_value_text
+
+service_snapshot_regime
+service_snapshot_stock
+service_snapshot_action
+```
+
+---
+
+## 5) 파싱 및 전처리 설계
+
+### 5-A. MIME별 처리
+
+* `PDF`
+
+  * 1차: `PyMuPDF` 로 텍스트/페이지 메타 추출
+  * 2차: `pdfplumber` 로 표 추출
+  * 3차: 스캔 PDF인 경우에만 OCR fallback
+  * 규칙: 첫 1~3페이지에서 제목/애널리스트/투자의견/목표주가/발간일 집중 추출
+
+* `DOCX`
+
+  * `python-docx` + `mammoth`
+  * 본문, heading, 표, 각주 추출
+  * embedded object는 별도 아티팩트 저장
+
+* `HTML`
+
+  * `trafilatura` → 실패 시 `BeautifulSoup` 룰 기반
+  * 본문, 요약, 작성자, 발행일, 카테고리, 다운로드 첨부 추출
+
+### 5-B. 문서 표준 분류(report_type)
+
+```text
+morning_outlook
+close_outlook
+daily_strategy
+weekly_strategy
+monthly_strategy
+macro
+rates
+fx
+credit
+commodity
+sector_report
+company_report
+theme_report
+etf_report
+real_estate
+policy_brief
+```
+
+### 5-C. 레이아웃 프로파일
+
+각 하우스마다 형식이 다르므로 `layout_profile` 을 둔다.
+
+예:
+
+```text
+samsung_profile
+- opinion_regex
+- target_price_regex
+- prior_target_price_regex
+- current_price_regex
+- analyst_regex
+- company_code_regex
+- section_aliases
+
+shinhan_profile
+...
+```
+
+### 5-D. 정규화 필드
+
+```text
+title_clean
+subtitle
+published_at_utc
+published_at_kst
+house_name
+analyst_names[]
+report_type
+region_tags[]
+asset_tags[]
+sector_tags[]
+company_tags[]
+horizon
+stance
+recommendation
+target_price
+previous_target_price
+price_upside_pct
+key_bullets[]
+risk_bullets[]
+catalyst_bullets[]
+```
+
+### 5-E. 품질 관리
+
+* disclaimer/compliance 페이지는 본문 영향도에서 분리
+* 중복 제거: `content_hash + title_similarity + publish_date`
+* digest vs 원본 구분: `is_digest`, `source_doc_ref`
+* 추출 신뢰도: `parser_confidence`, `entity_confidence`, `feature_confidence`
+
+---
+
+## 6) 피처 생성 파이프라인
+
+### 6-A. 공통 피처
+
+```text
+freshness_score
+house_quality_score
+parser_quality_score
+evidence_density_score
+cross_house_agreement_score
+theme_tags
+macro_tags
+risk_tags
+catalyst_tags
+```
+
+### 6-B. Market Regime용 피처
+
+```text
+risk_on_off_score
+growth_inflation_mix_score
+liquidity_score
+policy_risk_score
+geopolitical_risk_score
+rates_direction_score
+fx_pressure_score
+credit_spread_view_score
+commodity_pressure_score
+sector_overweight_matrix
+country_preference_matrix
+```
+
+**초기 가중치 권장값**
+
+```text
+regime_total_score
+= 0.35 * market_data_layer
++ 0.25 * macro_data_layer
++ 0.20 * research_regime_layer
++ 0.20 * news_policy_layer
+```
+
+리서치 리포트는 **체제 해석의 설명력**을 높이는 데 강점이 있으므로, Market Regime에서는 독립 시그널이면서도 시장 데이터보다 낮은 비중으로 시작한다.
+
+### 6-C. Stock Decision용 피처
+
+```text
+company_recommendation_score
+target_price_upside_score
+target_price_revision_score
+earnings_revision_score
+thesis_positive_score
+thesis_negative_score
+industry_tailwind_score
+industry_headwind_score
+cross_house_dispersion_score
+catalyst_near_term_score
+valuation_language_score
+management_execution_signal
+```
+
+**초기 가중치 권장값**
+
+```text
+stock_total_score
+= 0.30 * price_volume_layer
++ 0.20 * fundamental_layer
++ 0.20 * company_research_layer
++ 0.10 * industry_research_layer
++ 0.10 * regime_alignment_layer
++ 0.10 * event_news_layer
+```
+
+### 6-D. Action Planner용 피처
+
+```text
+actionability_score
+event_risk_score
+regime_alignment_score
+conviction_score
+invalidators[]
+entry_conditions[]
+add_conditions[]
+exit_conditions[]
+next_review_date
+```
+
+**Planner 규칙**
+
+* `BUY`라도 `event_risk_score` 가 높고 `regime_alignment_score` 가 낮으면 즉시 매수 대신 `관찰/분할접근`
+* `HOLD`라도 `target_price_revision_score < 0` 이고 `negative_thesis_density` 가 급증하면 `축소 검토`
+* `SELL/AVOID`가 아니어도 지정학/정책 이벤트 직전이면 `행동 유예`
+
+---
+
+## 7) 서비스 적용 방식
+
+### 7-A. Market Regime
+
+출력 계약:
+
+```json
+{
+  "regime_label": "Risk-On / Neutral / Risk-Off",
+  "regime_score": 0.0,
+  "supporting_factors": [],
+  "opposing_factors": [],
+  "sector_strength": [],
+  "regional_preferences": [],
+  "strategy_hints": [],
+  "invalidation_conditions": [],
+  "data_confidence": 0.0,
+  "evidence_docs": []
+}
+```
+
+적용 방식:
+
+* daily/weekly 전략 리포트와 은행/글로벌 macro outlook를 집계
+* 하우스별 stance 를 recency-weighted average 로 통합
+* sector_overweight/underweight 언급을 섹터 강약도로 투영
+* 사용자에게는 **“현재 체제 / 근거 / 반증 / 전략 힌트 / 신뢰도”** 순서로 제공
+
+### 7-B. Stock Decision
+
+출력 계약:
+
+```json
+{
+  "stock_id": "KRX:005930",
+  "decision_label": "Buy / Hold / Reduce / Avoid",
+  "horizon_scores": {
+    "short": 0.0,
+    "swing": 0.0,
+    "midterm": 0.0
+  },
+  "supporting_drivers": [],
+  "opposing_drivers": [],
+  "research_consensus": {
+    "recommendation_score": 0.0,
+    "dispersion_score": 0.0,
+    "target_price_upside_pct": 0.0
+  },
+  "catalysts": [],
+  "risks": [],
+  "checkpoints": [],
+  "data_confidence": 0.0,
+  "evidence_docs": []
+}
+```
+
+적용 방식:
+
+* 기업분석 + 산업분석 + 전략 리포트 + 현재 Market Regime 를 결합
+* 동일 종목에 대한 **최근 30/90일 투자의견 변화, 목표가 변화, 실적 추정 변경**을 누적
+* 사용자에게는 **“결론 / 찬성 근거 / 반대 근거 / 근접 촉매 / 체크포인트”** 순으로 제공
+
+### 7-C. Action Planner
+
+출력 계약:
+
+```json
+{
+  "action_label": "Immediate / Staged / Wait / Reduce",
+  "base_scenario": {},
+  "bull_scenario": {},
+  "bear_scenario": {},
+  "entry_rules": [],
+  "add_rules": [],
+  "exit_rules": [],
+  "invalidators": [],
+  "review_triggers": [],
+  "why_now": [],
+  "why_not_now": []
+}
+```
+
+적용 방식:
+
+* Stock Decision 결과를 그대로 반복하지 않고,
+* `regime_alignment + event_risk + conviction + volatility` 를 다시 평가해서
+* **실행 시나리오**로 변환
+* 사용자에게는 **“지금 할 행동 / 하지 말아야 할 행동 / 다음 점검 조건”** 을 명확히 제시
+
+---
+
+## 8) 배치 스케줄
+
+KST 기준 권장 배치:
+
+```text
+05:30  글로벌 공개형 리서치 1차 수집 (UBS, BlackRock, JPM, GS, Fidelity 등)
+06:30  전일 미국장 마감 관련 글로벌 daily/weekly 재수집
+07:00  국내 은행/연구소 아침 배치
+07:30  국내 증권사 morning/daily 전략 리포트 배치
+12:00  점심 재탐색 (누락/지연 게시 보정)
+15:40  장마감 시황 1차 수집
+17:30  장마감/전략/기업 분석 2차 수집
+21:00  라이선스 소스/수동드롭 동기화
+주말     주간/월간/전망 리포트 full refresh
+```
+
+규칙:
+
+* `published_at` 와 `fetched_at` 를 모두 저장
+* 동일 제목이라도 PDF 내용이 바뀌면 `document_version` 증가
+* 지연 게시가 잦은 소스는 하루 2~4회 재탐색
+
+---
+
+## 9) 운영 및 품질관리
+
+* `rate_limit_per_source`
+* `robots_and_tos_reviewed`
+* `auth_secret_rotation`
+* `failed_fetch_retry_policy`
+* `parser_alert_threshold`
+* `empty_text_ratio_alert`
+* `duplicate_rate_alert`
+* `source_drift_detection` (HTML 구조 변경 감지)
+
+모니터링 지표:
+
+```text
+fetch_success_rate
+parse_success_rate
+avg_parse_latency
+new_docs_per_source
+duplicate_docs_per_source
+empty_or_low_text_docs
+feature_extraction_failure_count
+service_snapshot_freshness
+```
+
+---
+
+## 10) Code Agent 구현 순서
+
+### Phase 1
+
+* source registry 모델/마이그레이션
+* P1 소스 8~10개 어댑터
+* raw storage + metadata 저장
+* 해시 기반 중복 제거
+
+### Phase 2
+
+* PDF/DOCX/HTML 파서
+* report_type 분류기
+* 엔티티 매핑
+* document chunk + pgvector
+
+### Phase 3
+
+* research_signal 추출기
+* market/sector/company feature generator
+* regime/stock/action snapshot 생성기
+
+### Phase 4
+
+* admin API
+* source health dashboard
+* entitlement/redistribution policy enforcement
+* evaluation set 기반 품질 측정
+
+---
+
+## 11) 저장소 구조 권장안
+
+```text
+repo/
+  apps/
+    api/
+    worker/
+    admin/
+  packages/
+    core/
+      config/
+      db/
+      models/
+      storage/
+      logging/
+    adapters/
+      public_html_pdf/
+      public_html_article/
+      authenticated_portal/
+      licensed_feed/
+      manual_drop/
+    parsers/
+      pdf/
+      docx/
+      html/
+      classifiers/
+      extractors/
+    normalization/
+      taxonomy/
+      entity_resolution/
+      dedupe/
+    features/
+      market_regime/
+      stock_decision/
+      action_planner/
+    pipelines/
+      discovery/
+      fetch/
+      parse/
+      normalize/
+      feature/
+      publish/
+  infra/
+    docker/
+    migrations/
+    prefect/
+  tests/
+    adapters/
+    parsers/
+    features/
+```
+
+---
+
+## 12) 최종 구현 원칙
+
+1. **소스별 크롤러를 하드코딩하지 말고, adapter + profile + selector config 구조로 구현할 것.**
+2. **원문 저장과 사용자 노출을 분리할 것.**
+3. **리서치 리포트는 독립 진실값이 아니라 해석/설명 강화 레이어로 사용할 것.**
+4. **기업분석은 단일 하우스가 아니라 cross-house consensus 와 dispersion 을 함께 볼 것.**
+5. **Market Regime는 은행/글로벌 매크로 리포트 비중을 높이고, Stock Decision은 기업/산업 리포트 비중을 높일 것.**
+6. **Action Planner는 점수 요약이 아니라 실행 규칙 산출기로 만들 것.**
+7. **글로벌 sell-side 기업분석은 공개 웹만으로는 불완전하므로, licensed lane 을 전제로 설계할 것.** UBS/BlackRock/Goldman/JPM/Fidelity/Schroders/PIMCO의 공개 영역은 주로 시장·경제·산업 인사이트 중심이고, Morningstar/Morgan Stanley/Nomura/AlphaSense/S&P는 별도 라이선스·포털·권한 모델이 존재한다. ([Japan][19])
+
+
+[1]: https://www.samsungpop.com/common.do?cmd=down&contentType=application%2Fpdf&fileName=4020%2F2026031616214948K_02_01.pdf&inlineYn=Y&saveKey=research.pdf "https://www.samsungpop.com/common.do?cmd=down&contentType=application%2Fpdf&fileName=4020%2F2026031616214948K_02_01.pdf&inlineYn=Y&saveKey=research.pdf"
+[2]: https://www.samsungpop.com/sscommon/jsp/search/research/research_pop.jsp "https://www.samsungpop.com/sscommon/jsp/search/research/research_pop.jsp"
+[3]: https://securities.miraeasset.com/bbs/board/message/list.do?categoryId=1521 "https://securities.miraeasset.com/bbs/board/message/list.do?categoryId=1521"
+[4]: https://www.nhisresearch.com/ "https://www.nhisresearch.com/"
+[5]: https://m.shinhansec.com/mweb/invt/shrh/ishrh1001 "https://m.shinhansec.com/mweb/invt/shrh/ishrh1001"
+[6]: https://www.kbsec.com/go.able?linkcd=m06080000 "https://www.kbsec.com/go.able?linkcd=m06080000"
+[7]: https://www.hanaw.com/main/research/researchReform/RC_000100_T4.cmd "https://www.hanaw.com/main/research/researchReform/RC_000100_T4.cmd"
+[8]: https://www.kiwoom.com/h/invest/research/VAnalCRView "https://www.kiwoom.com/h/invest/research/VAnalCRView"
+[9]: https://home.imeritz.com/dalyrpt/InfoMain.do "https://home.imeritz.com/dalyrpt/InfoMain.do"
+[10]: https://www.truefriend.com/main/research/research/Search.jsp "https://www.truefriend.com/main/research/research/Search.jsp"
+[11]: https://www.eugenefn.com/ingo/igii/igii902.do "https://www.eugenefn.com/ingo/igii/igii902.do"
+[12]: https://money2.daishin.com/E5/ResearchCenter/DM_ResearchList.aspx?pr_code=2 "https://money2.daishin.com/E5/ResearchCenter/DM_ResearchList.aspx?pr_code=2"
+[13]: https://www.kbfg.com/kbresearch/report/reportList.do "https://www.kbfg.com/kbresearch/report/reportList.do"
+[14]: https://www.hanaif.re.kr/boardList.do?menuId=&tabMenuId=MN2100 "https://www.hanaif.re.kr/boardList.do?menuId=&tabMenuId=MN2100"
+[15]: https://www.wfri.re.kr/ko/mo/research_report/research_report.php "https://www.wfri.re.kr/ko/mo/research_report/research_report.php"
+[16]: https://rd.kdb.co.kr/ "https://rd.kdb.co.kr/"
+[17]: https://research.ibk.co.kr/research/board/yearly/list "https://research.ibk.co.kr/research/board/yearly/list"
+[18]: https://bank.shinhan.com/index.jsp?cr=020200000000 "https://bank.shinhan.com/index.jsp?cr=020200000000"
+[19]: https://www.ubs.com/global/en/wealthmanagement/insights.html "https://www.ubs.com/global/en/wealthmanagement/insights.html"
+[20]: https://www.blackrock.com/corporate/insights/blackrock-investment-institute/publications/outlook "https://www.blackrock.com/corporate/insights/blackrock-investment-institute/publications/outlook"
+[21]: https://www.goldmansachs.com/insights/goldman-sachs-research "https://www.goldmansachs.com/insights/goldman-sachs-research"
+[22]: https://www.jpmorgan.com/insights/global-research/outlook/market-outlook "https://www.jpmorgan.com/insights/global-research/outlook/market-outlook"
+[23]: https://digital.fidelity.com/prgw/digital/research/market "https://digital.fidelity.com/prgw/digital/research/market"
+[24]: https://www.schroders.com/en-sg/sg/institutional/insights/our-multi-asset-investment-views-february-2026/ "https://www.schroders.com/en-sg/sg/institutional/insights/our-multi-asset-investment-views-february-2026/"
+[25]: https://www.pimco.com/kr/en/insights/uncertainty-is-certain "https://www.pimco.com/kr/en/insights/uncertainty-is-certain"
+[26]: https://www.morningstar.com/ "https://www.morningstar.com/"
+[27]: https://www.morganstanley.com/what-we-do/research "https://www.morganstanley.com/what-we-do/research"
+[28]: https://www.nomura.com/europe/services/client_services/bnf-global-markets-material-general-disclaimer.shtml "https://www.nomura.com/europe/services/client_services/bnf-global-markets-material-general-disclaimer.shtml"
+[29]: https://www.alpha-sense.com/solutions/broker-research-reports/ "https://www.alpha-sense.com/solutions/broker-research-reports/"
+[30]: https://www.spglobal.com/market-intelligence/en/solutions/products/sp-capital-iq-pro "https://www.spglobal.com/market-intelligence/en/solutions/products/sp-capital-iq-pro"

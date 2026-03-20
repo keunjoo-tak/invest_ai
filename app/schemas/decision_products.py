@@ -21,6 +21,7 @@ class MarketRegimeResponse(BaseModel):
     strategy_hints: list[str] = Field(default_factory=list)
     representative_symbols: list[dict[str, Any]] = Field(default_factory=list)
     headline_news_briefs: list[dict[str, Any]] = Field(default_factory=list)
+    research_briefs: list[dict[str, Any]] = Field(default_factory=list)
     pipeline_status: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -57,6 +58,9 @@ class StockDecisionResponse(BaseModel):
     sector_peer_snapshot: list[dict[str, Any]] = Field(default_factory=list)
     financial_summary: list[str] = Field(default_factory=list)
     policy_macro_summary: list[str] = Field(default_factory=list)
+    research_consensus: dict[str, Any] = Field(default_factory=dict)
+    research_summary: list[str] = Field(default_factory=list)
+    research_evidence_docs: list[dict[str, Any]] = Field(default_factory=list)
     source_analysis: AnalyzeTickerResponse
     pipeline_status: dict[str, Any] = Field(default_factory=dict)
 

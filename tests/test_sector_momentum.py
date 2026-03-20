@@ -58,7 +58,7 @@ def test_sector_momentum_is_reflected_in_component_scores() -> None:
     analysis = AnalyzeTickerResponse(
         request_id='test',
         ticker='000660',
-        instrument_name='SK????',
+        instrument_name='SK하이닉스',
         as_of_date=date(2026, 3, 14),
         generated_at_utc=datetime(2026, 3, 14, tzinfo=timezone.utc),
         response_language='ko',

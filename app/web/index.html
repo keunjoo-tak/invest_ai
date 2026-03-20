@@ -1,10 +1,10 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="ko">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>InvestAI Intelligence Desk</title>
-    <link rel="stylesheet" href="/assets/styles.css?v=20260313b" />
+    <link rel="stylesheet" href="/assets/styles.css?v=20260319h" />
   </head>
   <body>
     <div class="bg-orb orb-a"></div>
@@ -15,149 +15,214 @@
       <header class="topbar">
         <div>
           <p class="eyebrow">INVESTAI INTELLIGENCE DESK</p>
-          <h1>AI 기반 맞춤형 투자 분석 대시보드</h1>
+          <h1>AI 기반 투자 분석 대시보드</h1>
           <p class="hero-copy">
-            시장 체제, 종목 판단, 실행 계획, 관찰 알림을 리포트 형식으로 한 화면에서 확인합니다.
-            각 서비스는 버튼 실행 또는 파라미터 입력 패널을 통해 동작하며, 결과는 서비스 카드 아래에 근거 중심 리포트로 표시됩니다.
+            시장 체제, 종목 판단, 행동 계획, 관심 종목 점검을 하나의 작업 공간에서 확인할 수 있습니다.
+            현재 선택한 서비스의 입력 조건과 결과 리포트가 한 화면에서 이어지도록 구성되어 있습니다.
           </p>
         </div>
         <aside class="health-panel">
-          <p class="meta-label">백엔드 상태</p>
+          <p class="meta-label">서비스 상태</p>
           <strong id="health-status" class="health-value">확인 중...</strong>
-          <button id="refresh-health" class="btn tertiary" type="button">상태 새로고침</button>
+          <span id="auth-username" class="health-user">사용자 확인 중...</span>
+          <div class="health-actions">
+            <button id="refresh-health" class="btn tertiary" type="button">상태 새로고침</button>
+            <button id="logout-button" class="btn tertiary" type="button">로그아웃</button>
+          </div>
         </aside>
       </header>
 
-      <section class="overview-band">
-        <article class="overview-card">
-          <p class="meta-label">사용 흐름</p>
-          <h2>시장 확인 후 종목 판단, 실행 계획, 관찰 알림까지 연결</h2>
-          <p>
-            가장 먼저 `Market Regime`로 오늘의 시장 맥락을 확인하고, 이어서 종목별 판단과 실행 계획을 확인합니다.
-            바로 매매하지 않는 종목은 `Watchlist Alerts`에 저장해 지속 관찰합니다.
-          </p>
-        </article>
-        <article class="overview-card accent-card">
-          <p class="meta-label">리포트 구조</p>
-          <h2>최종 결론을 먼저, 근거 데이터는 그 아래</h2>
-          <p>
-            각 리포트의 첫 영역에는 사용자가 바로 판단할 수 있는 최종 답변을 배치하고,
-            그 아래에는 활용 데이터 요약, 근거 지표, 이벤트 타임라인, 정책/거시 배경을 정리합니다.
-          </p>
-        </article>
-      </section>
+      <section class="workspace-shell">
+        <aside class="control-rail">
+          <article class="rail-block">
+            <div class="rail-head">
+              <div>
+                <p class="meta-label">SERVICE NAVIGATION</p>
+                <h2>Analysis Workspace</h2>
+              </div>
+              <button id="toggle-admin" class="btn tertiary rail-admin-btn" type="button">Operator Tools</button>
+            </div>
+            <div class="service-nav" role="tablist" aria-label="Service Navigation">
+              <button id="launch-market" class="service-tab service-tab-market" data-service="market" type="button">
+                <span class="service-tab-kicker">RUN NOW</span>
+                <strong>Market Regime</strong>
+                <span>Start from the overall market regime, sector strength, and daily positioning context.</span>
+              </button>
+              <button id="launch-stock" class="service-tab service-tab-stock" data-service="stock" type="button">
+                <span class="service-tab-kicker">INPUT REQUIRED</span>
+                <strong>Stock Decision</strong>
+                <span>Review the current decision report for a single stock with event, financial, and macro evidence.</span>
+              </button>
+              <button id="launch-action" class="service-tab service-tab-action" data-service="action" type="button">
+                <span class="service-tab-kicker">INPUT REQUIRED</span>
+                <strong>Action Planner</strong>
+                <span>Build an execution plan by investment horizon, risk profile, and holding status.</span>
+              </button>
+              <button id="launch-watch" class="service-tab service-tab-watch" data-service="watch" type="button">
+                <span class="service-tab-kicker">INPUT REQUIRED</span>
+                <strong>Watchlist Alerts</strong>
+                <span>Check alert conditions now and manage saved monitoring targets in one place.</span>
+              </button>
+            </div>
+          </article>
 
-      <section class="service-grid">
-        <article class="service-card service-market" id="service-market">
-          <div class="service-head">
-            <div>
-              <p class="service-kicker">즉시 실행</p>
-              <h3>Market Regime</h3>
-              <p class="service-desc">오늘의 시장 체제와 강세·약세 섹터를 리포트로 확인합니다.</p>
+          <article class="rail-block">
+            <div class="rail-head compact">
+              <div>
+                <p class="meta-label">INPUT PANEL</p>
+                <h3 id="control-panel-title">Market Regime</h3>
+              </div>
+              <button id="control-reset" class="btn tertiary" type="button">Show Landing</button>
             </div>
-            <button id="launch-market" class="btn primary" type="button">리포트 실행</button>
-          </div>
-          <div id="report-market" class="report-mount report-empty">시장 리포트를 실행하면 이 영역에 근거 중심 리포트가 생성됩니다.</div>
-        </article>
+            <div id="service-control-panel" class="control-panel"></div>
+          </article>
 
-        <article class="service-card service-stock" id="service-stock">
-          <div class="service-head">
-            <div>
-              <p class="service-kicker">파라미터 입력</p>
-              <h3>Stock Decision</h3>
-              <p class="service-desc">종목명 또는 티커를 입력해 현재 판단과 근거를 리포트로 확인합니다.</p>
+          <article class="rail-block">
+            <div class="rail-head compact">
+              <div>
+                <p class="meta-label">RUN HISTORY</p>
+                <h3>Return To Recent Reports</h3>
+              </div>
             </div>
-            <button id="launch-stock" class="btn primary" type="button">조건 입력 후 실행</button>
-          </div>
-          <div id="report-stock" class="report-mount report-empty">종목 판단 리포트는 실행 후 이 영역에 출력됩니다.</div>
-        </article>
+            <div id="run-history" class="run-history"></div>
+          </article>
 
-        <article class="service-card service-action" id="service-action">
-          <div class="service-head">
-            <div>
-              <p class="service-kicker">파라미터 입력</p>
-              <h3>Action Planner</h3>
-              <p class="service-desc">위험 성향과 투자 기간에 맞는 실행 계획을 리포트 형식으로 생성합니다.</p>
-            </div>
-            <button id="launch-action" class="btn primary" type="button">조건 입력 후 실행</button>
-          </div>
-          <div id="report-action" class="report-mount report-empty">행동 계획 리포트는 실행 후 이 영역에 출력됩니다.</div>
-        </article>
-
-        <article class="service-card service-watch" id="service-watch">
-          <div class="service-head">
-            <div>
-              <p class="service-kicker">파라미터 입력</p>
-              <h3>Watchlist Alerts</h3>
-              <p class="service-desc">즉시 대응 여부와 관찰 트리거를 점검하고 워치리스트를 저장합니다.</p>
-            </div>
-            <div class="head-actions">
-              <button id="launch-watch" class="btn primary" type="button">즉시 점검</button>
-              <button id="launch-subscription" class="btn secondary" type="button">워치리스트 저장</button>
-            </div>
-          </div>
-          <div id="report-watch" class="report-mount report-empty">관찰 알림 리포트는 실행 후 이 영역에 출력됩니다.</div>
-          <div class="watchlist-block">
+          <article class="rail-block">
             <div class="watchlist-head">
               <div>
-                <p class="meta-label">저장형 워치리스트</p>
-                <h4>현재 등록된 관찰 종목</h4>
+                <p class="meta-label">WATCHLIST</p>
+                <h3>Saved Monitoring Targets</h3>
               </div>
-              <button id="refresh-subscriptions" class="btn tertiary" type="button">목록 새로고침</button>
+              <div class="head-actions">
+                <button id="launch-subscription" class="btn secondary" type="button">Save Target</button>
+                <button id="refresh-subscriptions" class="btn tertiary" type="button">Refresh</button>
+              </div>
             </div>
             <div id="subscription-list" class="subscription-list"></div>
             <div id="subscription-output" class="inline-feedback"></div>
-          </div>
-        </article>
-      </section>
+          </article>
+        </aside>
 
-      <section class="ops-zone">
-        <div class="ops-head">
-          <div>
-            <p class="eyebrow">OPERATOR TOOLS</p>
-            <h2>문서 수집/미리보기와 운영 배치</h2>
+        <section class="workspace-stage">
+          <div id="workspace-summary" class="workspace-summary">
+            <div>
+              <p id="workspace-kicker" class="meta-label">WORKSPACE SUMMARY</p>
+              <h2 id="workspace-title">Select a service and start analysis.</h2>
+              <p id="workspace-copy" class="workspace-copy">
+                The left rail is dedicated to service selection and input conditions. The right stage is reserved for a single active report.
+              </p>
+            </div>
+            <div id="workspace-status" class="workspace-status"></div>
           </div>
-          <button id="toggle-admin" class="btn tertiary" type="button">운영 도구 열기/닫기</button>
-        </div>
-        <div id="admin-body" class="ops-grid hidden">
-          <article class="ops-card">
-            <div class="ops-card-head">
-              <div>
-                <p class="meta-label">Source Preview</p>
-                <h3>소스 미리보기</h3>
+
+          <div id="workspace-content" class="workspace-content">
+            <section id="workspace-landing" class="landing-panel">
+              <div class="landing-hero">
+                <p class="meta-label">SELECTION VIEW</p>
+                <h2>One workspace for market context, stock judgement, execution planning, and monitoring.</h2>
+                <p>
+                  The current visual style stays the same, but the information architecture is rebuilt into a dedicated report stage.
+                  Select a service on the left, set inputs there, and read the result in the right-side report canvas.
+                </p>
               </div>
-              <button id="launch-preview" class="btn secondary" type="button">파라미터 입력</button>
-            </div>
-            <pre id="preview-output" class="output-block"></pre>
-          </article>
-          <article class="ops-card">
-            <div class="ops-card-head">
-              <div>
-                <p class="meta-label">Batch Execution</p>
-                <h3>운영 배치 실행</h3>
+              <div class="landing-grid">
+                <article class="service-card service-market">
+                  <div class="service-head">
+                    <div>
+                      <p class="service-kicker">RUN NOW</p>
+                      <h3>Market Regime</h3>
+                      <p class="service-desc">Check the market regime, sector map, and the main drivers for today's environment.</p>
+                    </div>
+                    <button class="btn primary" type="button" data-landing-service="market">Run Report</button>
+                  </div>
+                </article>
+                <article class="service-card service-stock">
+                  <div class="service-head">
+                    <div>
+                      <p class="service-kicker">DOCUMENT VIEW</p>
+                      <h3>Stock Decision</h3>
+                      <p class="service-desc">Review a detailed report for a single stock with upside/downside factors and timelines.</p>
+                    </div>
+                    <button class="btn primary" type="button" data-landing-service="stock">Set Inputs</button>
+                  </div>
+                </article>
+                <article class="service-card service-action">
+                  <div class="service-head">
+                    <div>
+                      <p class="service-kicker">EXECUTION PLAN</p>
+                      <h3>Action Planner</h3>
+                      <p class="service-desc">Translate a judgement into entry ranges, invalidation zones, and scenario-based actions.</p>
+                    </div>
+                    <button class="btn primary" type="button" data-landing-service="action">Set Inputs</button>
+                  </div>
+                </article>
+                <article class="service-card service-watch">
+                  <div class="service-head">
+                    <div>
+                      <p class="service-kicker">MONITORING</p>
+                      <h3>Watchlist Alerts</h3>
+                      <p class="service-desc">Monitor response urgency now and save the stock into the tracking list when needed.</p>
+                    </div>
+                    <button class="btn primary" type="button" data-landing-service="watch">Set Inputs</button>
+                  </div>
+                </article>
               </div>
-            </div>
-            <div class="batch-row">
-              <button id="run-kind" class="btn secondary" type="button">KIND</button>
-              <button id="run-policy" class="btn secondary" type="button">정책브리핑</button>
-              <button id="run-bok" class="btn secondary" type="button">한국은행</button>
-              <button id="run-naver-headlines" class="btn secondary" type="button">네이버 헤드라인</button>
-              <button id="run-market-snapshot" class="btn tertiary" type="button">시장 체제 스냅샷</button>
-            </div>
-            <pre id="batch-output" class="output-block"></pre>
-          </article>
-        </div>
+            </section>
+
+            <section id="report-stage" class="report-stage hidden" aria-live="polite"></section>
+          </div>
+        </section>
       </section>
     </main>
+
+    <div id="admin-backdrop" class="admin-backdrop hidden"></div>
+    <aside id="admin-drawer" class="admin-drawer hidden" aria-hidden="true">
+      <div class="sheet-head">
+        <div>
+          <p class="meta-label">OPERATOR TOOLS</p>
+          <h3>Preview Sources And Run Batches</h3>
+        </div>
+        <button id="admin-close" class="icon-btn" type="button" aria-label="Close">X</button>
+      </div>
+      <div class="admin-body">
+        <article class="ops-card">
+          <div class="ops-card-head">
+            <div>
+              <p class="meta-label">Source Preview</p>
+              <h3>Preview Source Output</h3>
+            </div>
+            <button id="launch-preview" class="btn secondary" type="button">Open Input</button>
+          </div>
+          <pre id="preview-output" class="output-block"></pre>
+        </article>
+        <article class="ops-card">
+          <div class="ops-card-head">
+            <div>
+              <p class="meta-label">Batch Execution</p>
+              <h3>Run Operator Batches</h3>
+            </div>
+          </div>
+          <div class="batch-row">
+            <button id="run-kind" class="btn secondary" type="button">KIND</button>
+            <button id="run-policy" class="btn secondary" type="button">Policy</button>
+            <button id="run-bok" class="btn secondary" type="button">BOK</button>
+            <button id="run-naver-headlines" class="btn secondary" type="button">Naver Headlines</button>
+            <button id="run-market-snapshot" class="btn tertiary" type="button">Market Snapshot</button>
+          </div>
+          <pre id="batch-output" class="output-block"></pre>
+        </article>
+      </div>
+    </aside>
+
 
     <div id="sheet-backdrop" class="sheet-backdrop hidden"></div>
     <aside id="sheet" class="sheet hidden" aria-hidden="true">
       <div class="sheet-head">
         <div>
-          <p id="sheet-kicker" class="meta-label">입력 패널</p>
+          <p id="sheet-kicker" class="meta-label">입력 안내</p>
           <h3 id="sheet-title">서비스 실행</h3>
         </div>
-        <button id="sheet-close" class="icon-btn" type="button" aria-label="닫기">×</button>
+        <button id="sheet-close" class="icon-btn" type="button" aria-label="닫기">횞</button>
       </div>
       <div id="sheet-body" class="sheet-body"></div>
     </aside>
@@ -207,7 +272,7 @@
             <option value="full_exit">전량 정리</option>
           </select>
         </label>
-        <label>평균단가(보유 시 선택)
+        <label>평균 매입가(보유 시 선택)
           <input name="avg_buy_price" type="number" min="0" step="0.01" placeholder="예: 72000" />
         </label>
         <label class="checkbox-line"><input type="checkbox" name="has_position" /> 현재 보유 중</label>
@@ -260,7 +325,10 @@
       </form>
     </template>
 
-    <script type="module" src="/assets/app.js?v=20260313b"></script>
+    <script type="module" src="/assets/app.js?v=20260319h"></script>
   </body>
 </html>
+
+
+
 

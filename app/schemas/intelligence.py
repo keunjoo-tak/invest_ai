@@ -85,3 +85,4 @@ class MarketPulseOverviewResponse(BaseModel):
     strategy_hints: list[str] = Field(default_factory=list)
     representative_symbols: list[dict[str, Any]] = Field(default_factory=list)
     headline_news_briefs: list[dict[str, Any]] = Field(default_factory=list)
+    research_briefs: list[dict[str, Any]] = Field(default_factory=list)
